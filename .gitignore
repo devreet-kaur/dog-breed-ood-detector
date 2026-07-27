@@ -1,0 +1,132 @@
+# ══════════════════════════════════════════════════════
+# dog-breed-ood-detector .gitignore
+# Finalized day 1 -- never change after PR #2 merges.
+# ══════════════════════════════════════════════════════
+
+# ── Data -- DVC tracked, never in Git ────────────────
+data/
+*.csv
+*.json.gz
+
+# ── Models -- DVC outputs, never in Git ──────────────
+models/
+*.pt
+*.pth
+*.pkl
+*.onnx
+*.bin
+*.safetensors
+
+# ── DVC pipeline outputs ──────────────────────────────
+reports/plots/
+reports/ood/
+reports/drift/
+reports/eda_plots/
+
+# ── MLflow -- machine specific, never commit ──────────
+mlruns/
+mlflow.db
+*.db
+
+# ── Python ────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+eggs/
+parts/
+var/
+sdist/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg
+MANIFEST
+
+# ── Environments ──────────────────────────────────────
+.env
+.env.*
+.venv
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+*.env
+
+# ── Jupyter ───────────────────────────────────────────
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/*
+profile_default/
+ipython_config.py
+
+# ── macOS ─────────────────────────────────────────────
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# ── Windows ───────────────────────────────────────────
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# ── Linux ─────────────────────────────────────────────
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# ── IDE ───────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*.swn
+.spyderproject.cfg
+.spyproject
+.ropeproject
+*.sublime-workspace
+
+# ── Docker ────────────────────────────────────────────
+.docker/
+
+# ── DVC local credentials -- NEVER commit ─────────────
+.dvc/config.local
+.dvc/tmp/
+
+# ── HuggingFace cache ─────────────────────────────────
+.cache/
+~/.cache/huggingface/
+
+# ── Logs ──────────────────────────────────────────────
+*.log
+logs/
+inference_logs/
+
+# ── Coverage ──────────────────────────────────────────
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+*.py,cover
