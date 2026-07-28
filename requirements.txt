@@ -1,65 +1,60 @@
 # dog-breed-ood-detector
-# Updated: July 2026
-# Python 3.10 | Apple Silicon MPS + CUDA compatible
-# Install: pip install -r requirements.txt
+# Python 3.11 | Apple Silicon MPS + CUDA compatible
 #
-# NOTE: PyTorch must be installed separately with the correct index URL.
-# macOS Apple Silicon (MPS):
-#   pip install torch==2.13.0 torchvision==0.28.0 --index-url https://download.pytorch.org/whl/cpu
-# Linux / Windows CUDA:
-#   pip install torch==2.13.0 torchvision==0.28.0 --index-url https://download.pytorch.org/whl/cu121
-# Then install the rest:
-#   pip install -r requirements.txt
+# Install PyTorch first:
+#   macOS:   pip install torch==2.13.0 torchvision==0.28.0 --index-url https://download.pytorch.org/whl/cpu
+#   CUDA:    pip install torch==2.13.0 torchvision==0.28.0 --index-url https://download.pytorch.org/whl/cu121
+#
+# Then: pip install -r requirements.txt
 
-# ── Deep Learning ─────────────────────────────────────────────────────────────
+# Deep Learning
 torch==2.13.0
 torchvision==0.28.0
 
-# ── Data Loading ──────────────────────────────────────────────────────────────
+# Data Loading
 datasets==5.0.0
 huggingface-hub==1.25.1
 
-# ── Augmentation ──────────────────────────────────────────────────────────────
+# Augmentation
 albumentations==2.0.8
 
-# ── Experiment Tracking ───────────────────────────────────────────────────────
-# macOS: always use port 5001 (port 5000 blocked by AirPlay Receiver)
-# mlflow ui --port 5001 --backend-store-uri sqlite:///mlflow.db
+# Experiment Tracking
+# macOS: mlflow ui --port 5001 --backend-store-uri sqlite:///mlflow.db
 mlflow==3.14.0
 
-# ── Metrics and Evaluation ────────────────────────────────────────────────────
+# Metrics
 scikit-learn==1.9.0
 torchmetrics==1.9.0
 
-# ── Visualization and Grad-CAM ────────────────────────────────────────────────
+# Visualization
 matplotlib==3.11.1
 seaborn==0.13.2
 grad-cam==1.5.5
 
-# ── Image Processing ──────────────────────────────────────────────────────────
-numpy==2.5.1
+# Image Processing
+numpy==2.4.6
 Pillow==12.3.0
 opencv-python-headless==5.0.0.93
 
-# ── API Serving ───────────────────────────────────────────────────────────────
-# macOS dev server: uvicorn src.app:app --host 0.0.0.0 --port 5001 --reload
-# Windows dev server: uvicorn src.app:app --host 0.0.0.0 --port 8000 --reload
+# API Serving
+# macOS: uvicorn src.app:app --host 0.0.0.0 --port 5001 --reload
+# Windows: uvicorn src.app:app --host 0.0.0.0 --port 8000 --reload
 fastapi==0.140.7
 uvicorn[standard]==0.51.0
 python-multipart==0.0.32
 pydantic==2.13.4
 
-# ── Monitoring ────────────────────────────────────────────────────────────────
+# Monitoring
 evidently==0.7.21
 
-# ── Pipeline and Data Versioning ─────────────────────────────────────────────
+# Pipeline
 dvc==3.67.1
 PyYAML==6.0.3
 
-# ── Testing and Linting ───────────────────────────────────────────────────────
+# Testing
 pytest==9.1.1
 httpx==0.28.1
 ruff==0.16.0
 
-# ── Utilities ─────────────────────────────────────────────────────────────────
+# Utilities
 tqdm==4.70.0
