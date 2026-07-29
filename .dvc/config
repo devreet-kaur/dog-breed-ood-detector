@@ -1,0 +1,4 @@
+[core]
+    remote = hf_remote
+['remote "hf_remote"']
+    url = webdavs://huggingface.co/datasets/rcsoria/dog-breed-ood-dvc

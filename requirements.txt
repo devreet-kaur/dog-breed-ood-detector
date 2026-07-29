@@ -49,6 +49,7 @@ evidently==0.7.21
 
 # Pipeline
 dvc==3.67.1
+dvc-webdav==3.0.1
 PyYAML==6.0.3
 
 # Testing
