@@ -21,7 +21,6 @@ models/
 reports/plots/
 reports/ood/
 reports/drift/
-reports/eda_plots/
 
 # ── MLflow -- machine specific, never commit ──────────
 mlruns/
