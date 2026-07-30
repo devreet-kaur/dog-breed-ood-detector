@@ -1,0 +1,40 @@
+# params.yaml — ALL hyperparameters live here. Never hardcode numbers in .py files.
+
+data:
+  img_size: 224
+  val_split: 0.15
+  test_split: 0.15
+  num_workers: 4
+  use_bbox_crop: true
+  num_classes: 120
+
+train_head:
+  epochs: 5
+  lr: 1.0e-3
+  batch_size: 32
+  dropout: 0.4
+
+train_finetune:
+  epochs: 30
+  lr_initial: 1.0e-4
+  lr_min: 1.0e-6
+  batch_size: 32
+  weight_decay: 1.0e-4
+  label_smoothing: 0.1
+  early_stopping_patience: 7
+
+ood_entropy:
+  temperature: 1.0
+  target_tpr: 0.95
+
+ood_binary:
+  epochs: 15
+  lr: 1.0e-3
+  batch_size: 32
+  dropout: 0.3
+
+ood_test:
+  categories: [cats, birds, cars, food, furniture]
+  images_per_category: 250
+  val_split: 0.20
+  test_split: 0.80
