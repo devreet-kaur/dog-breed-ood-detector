@@ -4,7 +4,10 @@
 # ══════════════════════════════════════════════════════
 
 # ── Data -- DVC tracked, never in Git ────────────────
-data/
+data/**
+!data/**/
+!data/**/*.dvc
+!data/**/.gitignore
 *.csv
 *.json.gz
 
