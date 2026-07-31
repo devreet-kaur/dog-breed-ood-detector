@@ -1,0 +1,17 @@
+stages:
+  train:
+    cmd: python src/train.py --stage head && python src/train.py --stage finetune
+    deps:
+      - src/train.py
+      - data/processed/train/
+      - params.yaml
+    params:
+      - params.yaml:
+          - data
+          - train_head
+          - train_finetune
+    outs:
+      - models/resnet18_best.pt
+    metrics:
+      - reports/metrics_train.json:
+          cache: false
