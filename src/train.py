@@ -1,15 +1,19 @@
 """
 src/train.py
-Two-stage ResNet50 transfer learning trainer for dog breed classification.
-Stage 1 (train_head)   — freeze backbone, train classifier head only
-Stage 2 (train_finetune) — unfreeze all, cosine-annealing fine-tune
+Two-stage ResNet-18 transfer learning for 120-class dog breed classification.
 
-Usage (called by DVC pipeline):
-    python src/train.py
+Stage head     — freeze backbone, train classifier head only
+Stage finetune — unfreeze all layers, cosine annealing LR schedule
 
-All hyperparameters are read from params.yaml — never hardcode values here.
+Usage:
+    python src/train.py --stage head
+    python src/train.py --stage finetune
+
+All hyperparameters read from params.yaml. Never hardcode values here.
+MLflow tracking URI set via env var: MLFLOW_TRACKING_URI=sqlite:///mlflow.db
 """
 
+import argparse
 import os
 import yaml
 import mlflow
@@ -24,13 +28,15 @@ import logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
 
-# ─── Load params ────────────────────────────────────────────────────────────
+
+# ── Params ───────────────────────────────────────────────────────────────────
 
 def load_params(path: str = "params.yaml") -> dict:
     with open(path, "r") as f:
         return yaml.safe_load(f)
 
-# ─── Device ─────────────────────────────────────────────────────────────────
+
+# ── Device ───────────────────────────────────────────────────────────────────
 
 def get_device() -> torch.device:
     if torch.cuda.is_available():
@@ -42,9 +48,10 @@ def get_device() -> torch.device:
     log.info(f"Using device: {device}")
     return device
 
-# ─── Data ───────────────────────────────────────────────────────────────────
 
-def get_transforms(img_size: int, augment: bool = True):
+# ── Transforms ───────────────────────────────────────────────────────────────
+
+def get_transforms(img_size: int, augment: bool):
     normalize = transforms.Normalize(
         mean=[0.485, 0.456, 0.406],
         std=[0.229, 0.224, 0.225]
@@ -65,23 +72,26 @@ def get_transforms(img_size: int, augment: bool = True):
     ])
 
 
-def get_dataloaders(data_params: dict):
-    img_size    = data_params["img_size"]
-    val_split   = data_params["val_split"]
-    test_split  = data_params["test_split"]
-    num_workers = data_params["num_workers"]
-    batch_size  = 32  # default; overridden per stage
+# ── Data ─────────────────────────────────────────────────────────────────────
+
+def get_dataloaders(data_p: dict, batch_size: int):
+    img_size    = data_p["img_size"]
+    val_split   = data_p["val_split"]
+    test_split  = data_p["test_split"]
+    num_workers = data_p["num_workers"]
 
     train_dir = os.path.join("data", "processed", "train")
     assert os.path.isdir(train_dir), (
         f"Processed data not found at '{train_dir}'. "
-        "Run Ryan's prepare.py (feat/data-pipeline) first."
+        "Run Ryan's prepare.py (feat/data-pipeline) first, then dvc pull."
     )
 
-    full_dataset = datasets.ImageFolder(train_dir, transform=get_transforms(img_size, augment=True))
+    full_dataset = datasets.ImageFolder(
+        train_dir, transform=get_transforms(img_size, augment=True)
+    )
     n = len(full_dataset)
-    n_val  = int(n * val_split)
-    n_test = int(n * test_split)
+    n_val   = int(n * val_split)
+    n_test  = int(n * test_split)
     n_train = n - n_val - n_test
 
     train_set, val_set, test_set = random_split(
@@ -90,11 +100,7 @@ def get_dataloaders(data_params: dict):
         generator=torch.Generator().manual_seed(42)
     )
 
-    # val/test use no-augment transforms
-    val_set.dataset  = datasets.ImageFolder(train_dir, transform=get_transforms(img_size, augment=False))
-    test_set.dataset = datasets.ImageFolder(train_dir, transform=get_transforms(img_size, augment=False))
-
-    log.info(f"Dataset split — train: {n_train}, val: {n_val}, test: {n_test}")
+    log.info(f"Split — train: {n_train}  val: {n_val}  test: {n_test}")
 
     train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True,
                               num_workers=num_workers, pin_memory=True)
@@ -105,14 +111,13 @@ def get_dataloaders(data_params: dict):
 
     return train_loader, val_loader, test_loader, full_dataset.classes
 
-# ─── Model ──────────────────────────────────────────────────────────────────
+
+# ── Model ────────────────────────────────────────────────────────────────────
 
 def build_model(num_classes: int, dropout: float) -> nn.Module:
-    model = models.resnet50(weights=models.ResNet50_Weights.IMAGENET1K_V2)
-    # Freeze all backbone layers
+    model = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1)
     for param in model.parameters():
-        param.requires_grad = False
-    # Replace final FC layer
+        param.requires_grad = False          # freeze backbone
     in_features = model.fc.in_features
     model.fc = nn.Sequential(
         nn.Dropout(p=dropout),
@@ -126,11 +131,32 @@ def unfreeze_model(model: nn.Module) -> None:
         param.requires_grad = True
     log.info("All layers unfrozen for fine-tuning.")
 
-# ─── Train / Eval loops ─────────────────────────────────────────────────────
 
-def train_one_epoch(model, loader, optimizer, criterion, device, accuracy_metric):
+def load_head_checkpoint(num_classes: int, dropout: float, device: torch.device) -> nn.Module:
+    ckpt = "models/resnet18_best.pt"
+    assert os.path.isfile(ckpt), (
+        f"Checkpoint not found at '{ckpt}'. Run --stage head first."
+    )
+    model = build_model(num_classes, dropout)
+    model.load_state_dict(torch.load(ckpt, map_location=device))
+    log.info(f"Loaded checkpoint from {ckpt}")
+    return model
+
+
+# ── Metrics ──────────────────────────────────────────────────────────────────
+
+def get_metrics(num_classes: int, device: torch.device):
+    top1 = Accuracy(task="multiclass", num_classes=num_classes, top_k=1).to(device)
+    top5 = Accuracy(task="multiclass", num_classes=num_classes, top_k=5).to(device)
+    return top1, top5
+
+
+# ── Train / Eval loops ───────────────────────────────────────────────────────
+
+def train_one_epoch(model, loader, optimizer, criterion, device, top1, top5):
     model.train()
-    accuracy_metric.reset()
+    top1.reset()
+    top5.reset()
     running_loss = 0.0
 
     for imgs, labels in tqdm(loader, desc="  train", leave=False):
@@ -141,17 +167,21 @@ def train_one_epoch(model, loader, optimizer, criterion, device, accuracy_metric
         loss.backward()
         optimizer.step()
         running_loss += loss.item() * imgs.size(0)
-        accuracy_metric.update(logits, labels)
+        top1.update(logits, labels)
+        top5.update(logits, labels)
 
-    epoch_loss = running_loss / len(loader.dataset)
-    epoch_acc  = accuracy_metric.compute().item()
-    return epoch_loss, epoch_acc
+    return (
+        running_loss / len(loader.dataset),
+        top1.compute().item(),
+        top5.compute().item()
+    )
 
 
 @torch.no_grad()
-def evaluate(model, loader, criterion, device, accuracy_metric):
+def evaluate(model, loader, criterion, device, top1, top5):
     model.eval()
-    accuracy_metric.reset()
+    top1.reset()
+    top5.reset()
     running_loss = 0.0
 
     for imgs, labels in tqdm(loader, desc="  eval ", leave=False):
@@ -159,154 +189,171 @@ def evaluate(model, loader, criterion, device, accuracy_metric):
         logits = model(imgs)
         loss = criterion(logits, labels)
         running_loss += loss.item() * imgs.size(0)
-        accuracy_metric.update(logits, labels)
+        top1.update(logits, labels)
+        top5.update(logits, labels)
 
-    epoch_loss = running_loss / len(loader.dataset)
-    epoch_acc  = accuracy_metric.compute().item()
-    return epoch_loss, epoch_acc
-
-# ─── Stage runners ──────────────────────────────────────────────────────────
-
-def run_stage(stage_name, model, train_loader, val_loader,
-              optimizer, scheduler, criterion, device,
-              num_classes, epochs, patience, params):
-
-    accuracy_metric = Accuracy(task="multiclass", num_classes=num_classes).to(device)
-    best_val_acc = 0.0
-    epochs_no_improve = 0
-    os.makedirs("models", exist_ok=True)
-    best_path = f"models/best_{stage_name}.pt"
-
-    for epoch in range(1, epochs + 1):
-        train_loss, train_acc = train_one_epoch(
-            model, train_loader, optimizer, criterion, device, accuracy_metric)
-        val_loss, val_acc = evaluate(
-            model, val_loader, criterion, device, accuracy_metric)
-
-        if scheduler:
-            scheduler.step()
-
-        log.info(
-            f"[{stage_name}] Epoch {epoch}/{epochs} | "
-            f"train_loss={train_loss:.4f} train_acc={train_acc:.4f} | "
-            f"val_loss={val_loss:.4f} val_acc={val_acc:.4f}"
-        )
-
-        mlflow.log_metrics({
-            f"{stage_name}_train_loss": train_loss,
-            f"{stage_name}_train_acc":  train_acc,
-            f"{stage_name}_val_loss":   val_loss,
-            f"{stage_name}_val_acc":    val_acc,
-        }, step=epoch)
-
-        if val_acc > best_val_acc:
-            best_val_acc = val_acc
-            epochs_no_improve = 0
-            torch.save(model.state_dict(), best_path)
-            log.info(f"  ✓ New best val_acc={best_val_acc:.4f} — saved to {best_path}")
-        else:
-            epochs_no_improve += 1
-            if patience and epochs_no_improve >= patience:
-                log.info(f"  Early stopping at epoch {epoch}.")
-                break
-
-    # Reload best weights before returning
-    model.load_state_dict(torch.load(best_path, map_location=device))
-    return model, best_val_acc
-
-# ─── Main ───────────────────────────────────────────────────────────────────
-
-def main():
-    params = load_params()
-    device = get_device()
-
-    data_p     = params["data"]
-    head_p     = params["train_head"]
-    finetune_p = params["train_finetune"]
-
-    train_loader, val_loader, test_loader, classes = get_dataloaders(data_p)
-    num_classes = data_p["num_classes"]
-    assert len(classes) == num_classes, (
-        f"Expected {num_classes} classes, found {len(classes)} in data/processed/train"
+    return (
+        running_loss / len(loader.dataset),
+        top1.compute().item(),
+        top5.compute().item()
     )
 
-    model = build_model(num_classes, dropout=head_p["dropout"]).to(device)
+
+# ── Stage: head ──────────────────────────────────────────────────────────────
+
+def stage_head(params: dict, device: torch.device):
+    head_p     = params["train_head"]
+    data_p     = params["data"]
+    finetune_p = params["train_finetune"]
+    num_classes = data_p["num_classes"]
+
+    train_loader, val_loader, _, _ = get_dataloaders(data_p, head_p["batch_size"])
+    model = build_model(num_classes, head_p["dropout"]).to(device)
 
     criterion = nn.CrossEntropyLoss(label_smoothing=finetune_p["label_smoothing"])
+    optimizer = torch.optim.Adam(
+        filter(lambda p: p.requires_grad, model.parameters()),
+        lr=head_p["lr"]
+    )
+
+    top1, top5 = get_metrics(num_classes, device)
+    os.makedirs("models", exist_ok=True)
+    best_val_top1 = 0.0
 
     mlflow.set_experiment("dog-breed-classifier")
-    with mlflow.start_run(run_name="resnet50-two-stage"):
+    with mlflow.start_run(run_name="resnet18-head"):
         mlflow.log_params({
-            "model":        "resnet50",
-            "num_classes":  num_classes,
-            **{f"head_{k}": v     for k, v in head_p.items()},
+            "stage":       "head",
+            "model":       "resnet18",
+            "num_classes": num_classes,
+            **{f"head_{k}": v for k, v in head_p.items()},
+        })
+
+        for epoch in range(1, head_p["epochs"] + 1):
+            tr_loss, tr_top1, tr_top5 = train_one_epoch(
+                model, train_loader, optimizer, criterion, device, top1, top5)
+            val_loss, val_top1, val_top5 = evaluate(
+                model, val_loader, criterion, device, top1, top5)
+
+            log.info(
+                f"[head] Epoch {epoch}/{head_p['epochs']} | "
+                f"tr_loss={tr_loss:.4f} tr_top1={tr_top1:.4f} tr_top5={tr_top5:.4f} | "
+                f"val_loss={val_loss:.4f} val_top1={val_top1:.4f} val_top5={val_top5:.4f}"
+            )
+
+            mlflow.log_metrics({
+                "head_train_loss":  tr_loss,
+                "head_train_top1":  tr_top1,
+                "head_train_top5":  tr_top5,
+                "head_val_loss":    val_loss,
+                "head_val_top1":    val_top1,
+                "head_val_top5":    val_top5,
+            }, step=epoch)
+
+            if val_top1 > best_val_top1:
+                best_val_top1 = val_top1
+                torch.save(model.state_dict(), "models/resnet18_best.pt")
+                log.info(f"  ✓ New best val_top1={best_val_top1:.4f} — saved models/resnet18_best.pt")
+
+    log.info(f"Stage head complete. Best val_top1={best_val_top1:.4f}")
+
+
+# ── Stage: finetune ──────────────────────────────────────────────────────────
+
+def stage_finetune(params: dict, device: torch.device):
+    finetune_p  = params["train_finetune"]
+    head_p      = params["train_head"]
+    data_p      = params["data"]
+    num_classes = data_p["num_classes"]
+
+    train_loader, val_loader, _, _ = get_dataloaders(data_p, finetune_p["batch_size"])
+    model = load_head_checkpoint(num_classes, head_p["dropout"], device).to(device)
+    unfreeze_model(model)
+
+    criterion = nn.CrossEntropyLoss(label_smoothing=finetune_p["label_smoothing"])
+    optimizer = torch.optim.AdamW(
+        model.parameters(),
+        lr=finetune_p["lr_initial"],
+        weight_decay=finetune_p["weight_decay"]
+    )
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer,
+        T_max=finetune_p["epochs"],
+        eta_min=finetune_p["lr_min"]
+    )
+
+    top1, top5 = get_metrics(num_classes, device)
+    os.makedirs("models", exist_ok=True)
+    best_val_top1   = 0.0
+    epochs_no_improve = 0
+    patience = finetune_p["early_stopping_patience"]
+
+    mlflow.set_experiment("dog-breed-classifier")
+    with mlflow.start_run(run_name="resnet18-finetune"):
+        mlflow.log_params({
+            "stage":       "finetune",
+            "model":       "resnet18",
+            "num_classes": num_classes,
             **{f"finetune_{k}": v for k, v in finetune_p.items()},
         })
 
-        # ── Stage 1: train head only ──────────────────────────────────────
-        log.info("=== Stage 1: Training classifier head ===")
-        optimizer_head = torch.optim.Adam(
-            filter(lambda p: p.requires_grad, model.parameters()),
-            lr=head_p["lr"]
-        )
-        model, best_head_acc = run_stage(
-            stage_name="head",
-            model=model,
-            train_loader=train_loader,
-            val_loader=val_loader,
-            optimizer=optimizer_head,
-            scheduler=None,
-            criterion=criterion,
-            device=device,
-            num_classes=num_classes,
-            epochs=head_p["epochs"],
-            patience=None,
-            params=params,
-        )
-        log.info(f"Stage 1 complete — best val_acc: {best_head_acc:.4f}")
+        for epoch in range(1, finetune_p["epochs"] + 1):
+            tr_loss, tr_top1, tr_top5 = train_one_epoch(
+                model, train_loader, optimizer, criterion, device, top1, top5)
+            val_loss, val_top1, val_top5 = evaluate(
+                model, val_loader, criterion, device, top1, top5)
+            scheduler.step()
 
-        # ── Stage 2: fine-tune all layers ────────────────────────────────
-        log.info("=== Stage 2: Fine-tuning all layers ===")
-        unfreeze_model(model)
-        optimizer_ft = torch.optim.AdamW(
-            model.parameters(),
-            lr=finetune_p["lr_initial"],
-            weight_decay=finetune_p["weight_decay"]
-        )
-        scheduler_ft = torch.optim.lr_scheduler.CosineAnnealingLR(
-            optimizer_ft,
-            T_max=finetune_p["epochs"],
-            eta_min=finetune_p["lr_min"]
-        )
-        model, best_ft_acc = run_stage(
-            stage_name="finetune",
-            model=model,
-            train_loader=train_loader,
-            val_loader=val_loader,
-            optimizer=optimizer_ft,
-            scheduler=scheduler_ft,
-            criterion=criterion,
-            device=device,
-            num_classes=num_classes,
-            epochs=finetune_p["epochs"],
-            patience=finetune_p["early_stopping_patience"],
-            params=params,
-        )
-        log.info(f"Stage 2 complete — best val_acc: {best_ft_acc:.4f}")
+            log.info(
+                f"[finetune] Epoch {epoch}/{finetune_p['epochs']} | "
+                f"tr_loss={tr_loss:.4f} tr_top1={tr_top1:.4f} tr_top5={tr_top5:.4f} | "
+                f"val_loss={val_loss:.4f} val_top1={val_top1:.4f} val_top5={val_top5:.4f}"
+            )
 
-        # ── Final test evaluation ────────────────────────────────────────
-        log.info("=== Final test evaluation ===")
-        accuracy_metric = Accuracy(task="multiclass", num_classes=num_classes).to(device)
-        test_loss, test_acc = evaluate(model, test_loader, criterion, device, accuracy_metric)
-        log.info(f"Test loss: {test_loss:.4f} | Test acc: {test_acc:.4f}")
-        mlflow.log_metrics({"test_loss": test_loss, "test_acc": test_acc})
+            mlflow.log_metrics({
+                "finetune_train_loss":  tr_loss,
+                "finetune_train_top1":  tr_top1,
+                "finetune_train_top5":  tr_top5,
+                "finetune_val_loss":    val_loss,
+                "finetune_val_top1":    val_top1,
+                "finetune_val_top5":    val_top5,
+            }, step=epoch)
 
-        # ── Save final model ─────────────────────────────────────────────
-        os.makedirs("models", exist_ok=True)
-        final_path = "models/resnet50_final.pt"
-        torch.save(model.state_dict(), final_path)
-        mlflow.log_artifact(final_path)
-        log.info(f"Final model saved to {final_path}")
+            if val_top1 > best_val_top1:
+                best_val_top1     = val_top1
+                epochs_no_improve = 0
+                torch.save(model.state_dict(), "models/resnet18_best.pt")
+                log.info(f"  ✓ New best val_top1={best_val_top1:.4f} — saved models/resnet18_best.pt")
+            else:
+                epochs_no_improve += 1
+                if epochs_no_improve >= patience:
+                    log.info(f"  Early stopping at epoch {epoch}.")
+                    break
+
+        mlflow.log_artifact("models/resnet18_best.pt")
+
+    log.info(f"Stage finetune complete. Best val_top1={best_val_top1:.4f}")
+
+
+# ── Main ─────────────────────────────────────────────────────────────────────
+
+def main():
+    parser = argparse.ArgumentParser(description="Train ResNet-18 dog breed classifier")
+    parser.add_argument(
+        "--stage",
+        required=True,
+        choices=["head", "finetune"],
+        help="head = train classifier only | finetune = unfreeze all and fine-tune"
+    )
+    args = parser.parse_args()
+
+    params = load_params()
+    device = get_device()
+
+    if args.stage == "head":
+        stage_head(params, device)
+    elif args.stage == "finetune":
+        stage_finetune(params, device)
 
 
 if __name__ == "__main__":
