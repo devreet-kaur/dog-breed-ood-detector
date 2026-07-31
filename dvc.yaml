@@ -15,3 +15,22 @@ stages:
     metrics:
       - reports/metrics_train.json:
           cache: false
+
+  evaluate:
+    cmd: python src/evaluate.py
+    deps:
+      - src/evaluate.py
+      - models/resnet18_best.pt
+      - data/processed/train/
+      - params.yaml
+    params:
+      - params.yaml:
+          - data
+          - train_head
+          - train_finetune
+    metrics:
+      - reports/metrics_test.json:
+          cache: false
+    plots:
+      - reports/plots/confusion_matrix.png:
+          cache: false
