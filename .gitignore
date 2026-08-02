@@ -66,7 +66,12 @@ env.bak/
 venv.bak/
 *.env
 
-# ── Local scratch / secrets (never commit) ───────────
+# ── Credentials -- never commit ───────────────────────
+.secrets/
+*service-account*.json
+*credentials*.json
+
+# ── Local scratch (never commit) ─────────────────────
 check.py
 scratch*.py
 tmp*.py
