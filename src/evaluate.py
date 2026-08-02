@@ -69,38 +69,26 @@ def get_eval_transforms(img_size: int):
 # ── Data ─────────────────────────────────────────────────────────────────────
 
 def get_test_loader(data_p: dict) -> tuple:
-    img_size   = data_p["img_size"]
-    val_split  = data_p["val_split"]
-    test_split = data_p["test_split"]
+    img_size    = data_p["img_size"]
     num_workers = data_p["num_workers"]
 
-    train_dir = os.path.join("data", "processed", "train")
-    assert os.path.isdir(train_dir), (
-        f"Processed data not found at '{train_dir}'. "
-        "Run Ryan's prepare.py and dvc pull first."
+    test_dir = os.path.join("data", "processed", "test")
+    assert os.path.isdir(test_dir), (
+        f"Processed data not found at '{test_dir}'. "
+        "Run dvc pull after Ryan's feat/data-pipeline merges."
     )
 
-    full_dataset = datasets.ImageFolder(
-        train_dir, transform=get_eval_transforms(img_size)
-    )
-    n = len(full_dataset)
-    n_val   = int(n * val_split)
-    n_test  = int(n * test_split)
-    n_train = n - n_val - n_test
-
-    _, _, test_set = random_split(
-        full_dataset,
-        [n_train, n_val, n_test],
-        generator=torch.Generator().manual_seed(42)
+    test_dataset = datasets.ImageFolder(
+        test_dir, transform=get_eval_transforms(img_size)
     )
 
     test_loader = DataLoader(
-        test_set, batch_size=32, shuffle=False,
+        test_dataset, batch_size=32, shuffle=False,
         num_workers=num_workers, pin_memory=True
     )
 
-    log.info(f"Test set size: {n_test} images | {len(full_dataset.classes)} classes")
-    return test_loader, full_dataset.classes
+    log.info(f"Test set: {len(test_dataset)} images | {len(test_dataset.classes)} classes")
+    return test_loader, test_dataset.classes
 
 
 # ── Model ────────────────────────────────────────────────────────────────────
