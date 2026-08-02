@@ -19,7 +19,7 @@ import yaml
 import mlflow
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, random_split
+from torch.utils.data import DataLoader
 from torchvision import datasets, transforms, models
 from torchmetrics import Accuracy
 from tqdm import tqdm
@@ -75,32 +75,47 @@ def get_transforms(img_size: int, augment: bool):
 # ── Data ─────────────────────────────────────────────────────────────────────
 
 def get_dataloaders(data_p: dict, batch_size: int):
+    """Load the three splits that src/prepare.py wrote to disk.
+
+    Changed in PR #5: this used to point ImageFolder at data/processed/train/
+    and call random_split on it. Reading the folders directly instead means
+      - the split lives in DVC, so it is identical for everyone and across runs
+      - it is stratified per breed (a flat random split left rare breeds thin)
+      - val and test get the eval transform. The old code built one dataset with
+        augment=True and split it, so val/test were randomly cropped, flipped
+        and colour-jittered, which quietly inflated the loss they reported.
+    """
     img_size    = data_p["img_size"]
-    val_split   = data_p["val_split"]
-    test_split  = data_p["test_split"]
     num_workers = data_p["num_workers"]
+    out_dir     = data_p.get("out_dir", os.path.join("data", "processed"))
 
-    train_dir = os.path.join("data", "processed", "train")
-    assert os.path.isdir(train_dir), (
-        f"Processed data not found at '{train_dir}'. "
-        "Run Ryan's prepare.py (feat/data-pipeline) first, then dvc pull."
+    split_dirs = {s: os.path.join(out_dir, s) for s in ("train", "val", "test")}
+    missing = [d for d in split_dirs.values() if not os.path.isdir(d)]
+    assert not missing, (
+        f"Processed data not found at: {', '.join(missing)}. "
+        "Run `dvc pull`, or build it with `python src/prepare.py --download` "
+        "followed by `dvc repro prepare`."
     )
 
-    full_dataset = datasets.ImageFolder(
-        train_dir, transform=get_transforms(img_size, augment=True)
+    train_set = datasets.ImageFolder(
+        split_dirs["train"], transform=get_transforms(img_size, augment=True)
     )
-    n = len(full_dataset)
-    n_val   = int(n * val_split)
-    n_test  = int(n * test_split)
-    n_train = n - n_val - n_test
-
-    train_set, val_set, test_set = random_split(
-        full_dataset,
-        [n_train, n_val, n_test],
-        generator=torch.Generator().manual_seed(42)
+    val_set = datasets.ImageFolder(
+        split_dirs["val"], transform=get_transforms(img_size, augment=False)
+    )
+    test_set = datasets.ImageFolder(
+        split_dirs["test"], transform=get_transforms(img_size, augment=False)
     )
 
-    log.info(f"Split — train: {n_train}  val: {n_val}  test: {n_test}")
+    # A class present in train but not val/test would silently shift label ids.
+    assert train_set.classes == val_set.classes == test_set.classes, (
+        "Class lists differ between splits -- re-run `dvc repro prepare`."
+    )
+
+    log.info(
+        f"Split — train: {len(train_set)}  val: {len(val_set)}  "
+        f"test: {len(test_set)}  ({len(train_set.classes)} classes)"
+    )
 
     train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True,
                               num_workers=num_workers, pin_memory=True)
@@ -109,7 +124,7 @@ def get_dataloaders(data_p: dict, batch_size: int):
     test_loader  = DataLoader(test_set,  batch_size=batch_size, shuffle=False,
                               num_workers=num_workers, pin_memory=True)
 
-    return train_loader, val_loader, test_loader, full_dataset.classes
+    return train_loader, val_loader, test_loader, train_set.classes
 
 
 # ── Model ────────────────────────────────────────────────────────────────────
