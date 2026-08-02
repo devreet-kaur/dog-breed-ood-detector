@@ -24,7 +24,6 @@ models/
 reports/plots/
 reports/ood/
 reports/drift/
-reports/eda_plots/
 
 # ── MLflow -- machine specific, never commit ──────────
 mlruns/
@@ -63,6 +62,11 @@ ENV/
 env.bak/
 venv.bak/
 *.env
+
+# ── Credentials -- never commit ───────────────────────
+.secrets/
+*service-account*.json
+*credentials*.json
 
 # ── Jupyter ───────────────────────────────────────────
 .ipynb_checkpoints/
