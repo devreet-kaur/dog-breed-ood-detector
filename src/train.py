@@ -76,40 +76,43 @@ def get_transforms(img_size: int, augment: bool):
 
 def get_dataloaders(data_p: dict, batch_size: int):
     img_size    = data_p["img_size"]
-    val_split   = data_p["val_split"]
-    test_split  = data_p["test_split"]
     num_workers = data_p["num_workers"]
 
     train_dir = os.path.join("data", "processed", "train")
-    assert os.path.isdir(train_dir), (
-        f"Processed data not found at '{train_dir}'. "
-        "Run Ryan's prepare.py (feat/data-pipeline) first, then dvc pull."
-    )
+    val_dir   = os.path.join("data", "processed", "val")
+    test_dir  = os.path.join("data", "processed", "test")
 
-    full_dataset = datasets.ImageFolder(
+    for d in [train_dir, val_dir, test_dir]:
+        assert os.path.isdir(d), (
+            f"Processed data not found at '{d}'. "
+            "Run dvc pull after Ryan's feat/data-pipeline merges."
+        )
+
+    train_dataset = datasets.ImageFolder(
         train_dir, transform=get_transforms(img_size, augment=True)
     )
-    n = len(full_dataset)
-    n_val   = int(n * val_split)
-    n_test  = int(n * test_split)
-    n_train = n - n_val - n_test
-
-    train_set, val_set, test_set = random_split(
-        full_dataset,
-        [n_train, n_val, n_test],
-        generator=torch.Generator().manual_seed(42)
+    val_dataset = datasets.ImageFolder(
+        val_dir, transform=get_transforms(img_size, augment=False)
+    )
+    test_dataset = datasets.ImageFolder(
+        test_dir, transform=get_transforms(img_size, augment=False)
     )
 
-    log.info(f"Split — train: {n_train}  val: {n_val}  test: {n_test}")
+    log.info(
+        f"Train: {len(train_dataset)} | "
+        f"Val: {len(val_dataset)} | "
+        f"Test: {len(test_dataset)} | "
+        f"Classes: {len(train_dataset.classes)}"
+    )
 
-    train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True,
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True,
                               num_workers=num_workers, pin_memory=True)
-    val_loader   = DataLoader(val_set,   batch_size=batch_size, shuffle=False,
+    val_loader   = DataLoader(val_dataset,   batch_size=batch_size, shuffle=False,
                               num_workers=num_workers, pin_memory=True)
-    test_loader  = DataLoader(test_set,  batch_size=batch_size, shuffle=False,
+    test_loader  = DataLoader(test_dataset,  batch_size=batch_size, shuffle=False,
                               num_workers=num_workers, pin_memory=True)
 
-    return train_loader, val_loader, test_loader, full_dataset.classes
+    return train_loader, val_loader, test_loader, train_dataset.classes
 
 
 # ── Model ────────────────────────────────────────────────────────────────────
