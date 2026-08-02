@@ -27,7 +27,7 @@ type: short description in lowercase
 
 Examples:
 feat: add bounding box crop to prepare.py
-chore: initialize DVC with HuggingFace remote
+chore: initialize DVC with Google Drive remote
 fix: correct entropy threshold calibration
 docs: update model card with final metrics
 test: add edge case tests for invalid image input
@@ -76,6 +76,46 @@ ruff check src/ tests/
 Use Squash and merge for feature branches into dev.
 Use Merge commit for the final dev into main PR (#10).
 
+## Data and DVC
+
+The remote is a **shared Google Drive folder**, accessed through the Google Drive
+for Desktop mount rather than the Drive API. There is no token and no service
+account to configure -- if you can see the folder in Explorer/Finder, DVC can
+use it.
+
+It used to be a HuggingFace WebDAV remote. That is gone, and any HF token you
+still have lying around should be revoked.
+
+One-time setup per person:
+
+1. Install [Google Drive for Desktop](https://www.google.com/drive/download/)
+   and sign in with the account the `dog-breed-ood-dvc` folder is shared with.
+2. Wait for the folder to appear in your mount.
+3. Point DVC at *your* mount path. The committed default is Ryan's Windows
+   path, so everyone else overrides it locally:
+
+```bash
+# Windows (adjust the drive letter if yours differs)
+dvc remote modify --local gdrive_remote url "G:/My Drive/dog-breed-ood-dvc"
+
+# macOS
+dvc remote modify --local gdrive_remote url \
+    "/Volumes/GoogleDrive/My Drive/dog-breed-ood-dvc"
+
+dvc pull
+```
+
+`--local` writes to `.dvc/config.local`, which is git-ignored -- so your machine's
+path never ends up in a PR.
+
+Everyday use: `dvc pull` to get data, `dvc push` after a pipeline run, and commit
+the resulting `.dvc` / `dvc.lock` files.
+
+**Be patient after a push.** DVC writes thousands of small files, and Drive for
+Desktop syncs them in the background. `dvc push` returning is not the same as
+the data being uploaded -- check the Drive icon in your system tray before
+telling someone else to pull.
+
 ## What never goes in Git
 
 - Any file in data/ (use DVC)
@@ -83,6 +123,7 @@ Use Merge commit for the final dev into main PR (#10).
 - mlruns/ or mlflow.db
 - .env files or any file containing tokens or API keys
 - .dvc/config.local
+- .secrets/ or any service account .json key
 
 If you accidentally commit any of these:
 ```bash

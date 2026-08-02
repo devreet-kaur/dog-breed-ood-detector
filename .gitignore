@@ -60,6 +60,11 @@ env.bak/
 venv.bak/
 *.env
 
+# ── Credentials -- never commit ───────────────────────
+.secrets/
+*service-account*.json
+*credentials*.json
+
 # ── Jupyter ───────────────────────────────────────────
 .ipynb_checkpoints/
 */.ipynb_checkpoints/*
