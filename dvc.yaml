@@ -10,7 +10,10 @@ stages:
       - src/prepare.py
       - data/raw/stanford_dogs/Images
       - data/raw/stanford_dogs/Annotation
-      - params.yaml
+    # params.yaml is deliberately NOT in deps. Listing the whole file there
+    # would re-run this six-minute stage whenever anyone touched train_head,
+    # ood_binary, etc. The params block below is precise: only the `data`
+    # section invalidates prepare.
     params:
       - params.yaml:
           - data
