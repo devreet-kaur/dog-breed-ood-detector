@@ -12,12 +12,14 @@ from src.ood_binary import (
     BinaryCNN,
     DogOODDataset,
     EpochMetrics,
+    TrainingHistory,
     build_balanced_sampler,
     build_binary_dataloaders,
     build_binary_transforms,
     discover_image_files,
     save_binary_checkpoint,
     split_files,
+    train_binary_model,
     train_one_epoch,
     validate_one_epoch,
 )
@@ -341,3 +343,98 @@ def test_save_binary_checkpoint_creates_file(tmp_path) -> None:
     )
 
     assert saved_state.keys() == model.state_dict().keys()
+    
+    
+def test_train_binary_model_returns_complete_history(tmp_path) -> None:
+    features = torch.randn(12, 4)
+    labels = torch.tensor([0, 1] * 6)
+
+    train_loader = DataLoader(
+        TensorDataset(features, labels),
+        batch_size=4,
+        shuffle=False,
+    )
+    validation_loader = DataLoader(
+        TensorDataset(features, labels),
+        batch_size=4,
+        shuffle=False,
+    )
+
+    model = TinyBinaryClassifier()
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+
+    history = train_binary_model(
+        model=model,
+        train_loader=train_loader,
+        validation_loader=validation_loader,
+        optimizer=optimizer,
+        criterion=nn.CrossEntropyLoss(),
+        device=torch.device("cpu"),
+        epochs=3,
+        checkpoint_path=tmp_path / "binary_cnn.pt",
+    )
+
+    assert isinstance(history, TrainingHistory)
+    assert len(history.train_loss) == 3
+    assert len(history.train_accuracy) == 3
+    assert len(history.val_loss) == 3
+    assert len(history.val_accuracy) == 3
+    assert 1 <= history.best_epoch <= 3
+    assert 0.0 <= history.best_val_accuracy <= 1.0
+
+
+def test_train_binary_model_saves_best_checkpoint(tmp_path) -> None:
+    features = torch.randn(8, 4)
+    labels = torch.tensor([0, 1] * 4)
+
+    dataloader = DataLoader(
+        TensorDataset(features, labels),
+        batch_size=4,
+    )
+
+    checkpoint_path = tmp_path / "models" / "binary_cnn.pt"
+
+    model = TinyBinaryClassifier()
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.05)
+
+    train_binary_model(
+        model=model,
+        train_loader=dataloader,
+        validation_loader=dataloader,
+        optimizer=optimizer,
+        criterion=nn.CrossEntropyLoss(),
+        device=torch.device("cpu"),
+        epochs=2,
+        checkpoint_path=checkpoint_path,
+    )
+
+    assert checkpoint_path.exists()
+
+
+@pytest.mark.parametrize("epochs", [0, -1])
+def test_train_binary_model_rejects_invalid_epochs(
+    epochs: int,
+    tmp_path,
+) -> None:
+    features = torch.randn(4, 4)
+    labels = torch.tensor([0, 1, 0, 1])
+
+    dataloader = DataLoader(
+        TensorDataset(features, labels),
+        batch_size=2,
+    )
+
+    model = TinyBinaryClassifier()
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+
+    with pytest.raises(ValueError, match="greater than zero"):
+        train_binary_model(
+            model=model,
+            train_loader=dataloader,
+            validation_loader=dataloader,
+            optimizer=optimizer,
+            criterion=nn.CrossEntropyLoss(),
+            device=torch.device("cpu"),
+            epochs=epochs,
+            checkpoint_path=tmp_path / "binary_cnn.pt",
+        )

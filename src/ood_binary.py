@@ -412,3 +412,85 @@ def save_binary_checkpoint(
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     torch.save(model.state_dict(), output_path)
+    
+
+@dataclass
+class TrainingHistory:
+    """Training and validation metrics collected across epochs."""
+
+    train_loss: list[float]
+    train_accuracy: list[float]
+    val_loss: list[float]
+    val_accuracy: list[float]
+    best_epoch: int
+    best_val_accuracy: float
+    
+def train_binary_model(
+    model: nn.Module,
+    train_loader: DataLoader,
+    validation_loader: DataLoader,
+    optimizer: torch.optim.Optimizer,
+    criterion: nn.Module,
+    device: torch.device,
+    epochs: int,
+    checkpoint_path: str | Path,
+) -> TrainingHistory:
+    """Train the binary classifier and save the best checkpoint."""
+    if epochs <= 0:
+        raise ValueError("epochs must be greater than zero")
+
+    model = model.to(device)
+
+    train_losses: list[float] = []
+    train_accuracies: list[float] = []
+    val_losses: list[float] = []
+    val_accuracies: list[float] = []
+
+    best_epoch = 0
+    best_val_accuracy = float("-inf")
+
+    for epoch in range(1, epochs + 1):
+        train_metrics = train_one_epoch(
+            model=model,
+            dataloader=train_loader,
+            optimizer=optimizer,
+            criterion=criterion,
+            device=device,
+        )
+
+        validation_metrics = validate_one_epoch(
+            model=model,
+            dataloader=validation_loader,
+            criterion=criterion,
+            device=device,
+        )
+
+        train_losses.append(train_metrics.loss)
+        train_accuracies.append(train_metrics.accuracy)
+        val_losses.append(validation_metrics.loss)
+        val_accuracies.append(validation_metrics.accuracy)
+
+        print(
+            f"Epoch {epoch:02d}/{epochs} | "
+            f"train_loss={train_metrics.loss:.4f} | "
+            f"train_acc={train_metrics.accuracy:.4f} | "
+            f"val_loss={validation_metrics.loss:.4f} | "
+            f"val_acc={validation_metrics.accuracy:.4f}"
+        )
+
+        if validation_metrics.accuracy > best_val_accuracy:
+            best_val_accuracy = validation_metrics.accuracy
+            best_epoch = epoch
+            save_binary_checkpoint(
+                model=model,
+                output_path=checkpoint_path,
+            )
+
+    return TrainingHistory(
+        train_loss=train_losses,
+        train_accuracy=train_accuracies,
+        val_loss=val_losses,
+        val_accuracy=val_accuracies,
+        best_epoch=best_epoch,
+        best_val_accuracy=best_val_accuracy,
+    )
