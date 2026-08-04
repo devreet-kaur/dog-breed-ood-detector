@@ -5,13 +5,38 @@ import math
 
 import pytest
 import torch
+from torch import nn
+from torch.utils.data import DataLoader, TensorDataset
 
 from src.ood_entropy import (
     calibrate_threshold,
     classify_ood,
+    collect_entropy_scores,
     compute_entropy,
     save_threshold,
 )
+
+
+class TinyClassifier(nn.Module):
+    """Small deterministic classifier used for entropy tests."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.classifier = nn.Linear(4, 3, bias=False)
+
+        with torch.no_grad():
+            self.classifier.weight.copy_(
+                torch.tensor(
+                    [
+                        [1.0, 0.0, 0.0, 0.0],
+                        [0.0, 1.0, 0.0, 0.0],
+                        [0.0, 0.0, 1.0, 0.0],
+                    ]
+                )
+            )
+
+    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+        return self.classifier(inputs)
 
 
 def test_uniform_logits_have_maximum_entropy() -> None:
@@ -129,3 +154,97 @@ def test_save_threshold_writes_expected_json(tmp_path) -> None:
         "target_tpr": 0.95,
         "num_validation_samples": 3084,
     }    
+    
+
+def test_collect_entropy_scores_returns_one_score_per_sample() -> None:
+    features = torch.tensor(
+        [
+            [2.0, 0.0, 0.0, 0.0],
+            [0.0, 2.0, 0.0, 0.0],
+            [0.0, 0.0, 2.0, 0.0],
+            [1.0, 1.0, 1.0, 0.0],
+            [3.0, 0.0, 0.0, 0.0],
+        ]
+    )
+    labels = torch.zeros(5, dtype=torch.long)
+
+    dataloader = DataLoader(
+        TensorDataset(features, labels),
+        batch_size=2,
+        shuffle=False,
+    )
+
+    model = TinyClassifier()
+
+    scores = collect_entropy_scores(
+        model=model,
+        dataloader=dataloader,
+        device=torch.device("cpu"),
+        temperature=1.0,
+    )
+
+    assert scores.shape == (5,)
+    assert scores.device.type == "cpu"
+    assert torch.isfinite(scores).all()
+
+
+def test_collect_entropy_scores_matches_direct_computation() -> None:
+    features = torch.tensor(
+        [
+            [2.0, 0.0, 0.0, 0.0],
+            [1.0, 1.0, 1.0, 0.0],
+        ]
+    )
+
+    dataloader = DataLoader(features, batch_size=2)
+    model = TinyClassifier()
+
+    collected = collect_entropy_scores(
+        model=model,
+        dataloader=dataloader,
+        device=torch.device("cpu"),
+    )
+
+    expected_logits = model(features)
+    expected = compute_entropy(expected_logits)
+
+    assert torch.allclose(collected, expected)
+
+
+def test_collect_entropy_scores_sets_model_to_evaluation_mode() -> None:
+    features = torch.randn(3, 4)
+    dataloader = DataLoader(features, batch_size=2)
+
+    model = TinyClassifier()
+    model.train()
+
+    collect_entropy_scores(
+        model=model,
+        dataloader=dataloader,
+        device=torch.device("cpu"),
+    )
+
+    assert model.training is False
+
+
+def test_collect_entropy_scores_rejects_empty_dataloader() -> None:
+    features = torch.empty((0, 4))
+    dataloader = DataLoader(features, batch_size=2)
+
+    with pytest.raises(ValueError, match="did not provide any samples"):
+        collect_entropy_scores(
+            model=TinyClassifier(),
+            dataloader=dataloader,
+            device=torch.device("cpu"),
+        )
+
+
+def test_collect_entropy_scores_rejects_unsupported_batch() -> None:
+    invalid_dataloader = [{"images": torch.randn(2, 4)}]
+
+    with pytest.raises(TypeError, match="batches must be tensors"):
+        collect_entropy_scores(
+            model=TinyClassifier(),
+            dataloader=invalid_dataloader,
+            device=torch.device("cpu"),
+        )

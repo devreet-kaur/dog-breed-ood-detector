@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from pathlib import Path
 
 import numpy as np
@@ -48,6 +49,75 @@ def compute_entropy(
 
     return -(probabilities * log_probabilities).sum(dim=1)
 
+@torch.inference_mode()
+def collect_entropy_scores(
+    model: torch.nn.Module,
+    dataloader: Iterable,
+    device: torch.device,
+    temperature: float = 1.0,
+) -> torch.Tensor:
+    """Collect entropy scores for every sample in a dataloader.
+
+    The dataloader may return either:
+
+    - ``(images, labels)``
+    - ``images`` only
+
+    Labels are ignored because entropy calculation requires only model logits.
+
+    Args:
+        model: Classification model returning logits of shape
+            ``(batch_size, num_classes)``.
+        dataloader: Iterable yielding image batches or image-label pairs.
+        device: Device used for inference.
+        temperature: Positive softmax temperature.
+
+    Returns:
+        One-dimensional CPU tensor containing one entropy score per image.
+
+    Raises:
+        ValueError: If the dataloader contains no samples.
+        TypeError: If a batch has an unsupported structure.
+    """
+    model = model.to(device)
+    model.eval()
+
+    collected_scores: list[torch.Tensor] = []
+
+    for batch in dataloader:
+        if isinstance(batch, (tuple, list)):
+            if not batch:
+                raise TypeError("dataloader returned an empty batch")
+
+            images = batch[0]
+        elif torch.is_tensor(batch):
+            images = batch
+        else:
+            raise TypeError(
+                "dataloader batches must be tensors or tuples/lists "
+                "whose first item is an image tensor"
+            )
+
+        if not torch.is_tensor(images):
+            raise TypeError("the image batch must be a torch.Tensor")
+
+        images = images.to(device)
+        logits = model(images)
+
+        if not torch.is_tensor(logits):
+            raise TypeError("model output must be a torch.Tensor")
+
+        batch_scores = compute_entropy(
+            logits=logits,
+            temperature=temperature,
+        )
+
+        collected_scores.append(batch_scores.detach().cpu())
+
+    if not collected_scores:
+        raise ValueError("dataloader did not provide any samples")
+
+    return torch.cat(collected_scores, dim=0)
 
 def classify_ood(
     entropy_scores: torch.Tensor,
