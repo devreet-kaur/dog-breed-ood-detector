@@ -1,0 +1,61 @@
+schema: '2.0'
+stages:
+  prepare:
+    cmd: python src/prepare.py
+    deps:
+    - path: data/raw/stanford_dogs/Annotation
+      hash: md5
+      md5: 2211795d6bcd4abec35de6ff8311c494.dir
+      size: 10346259
+      nfiles: 20580
+    - path: data/raw/stanford_dogs/Images
+      hash: md5
+      md5: 8bdba35a1f267af17ab5834acb345154.dir
+      size: 777706781
+      nfiles: 20580
+    - path: params.yaml
+      hash: md5
+      md5: 1d6f864a4591452428d3e25a997816ea
+      size: 1500
+    - path: src/prepare.py
+      hash: md5
+      md5: 03c33fb939ba4cc694abe92e5fd266d6
+      size: 16536
+    params:
+      params.yaml:
+        data:
+          img_size: 224
+          val_split: 0.15
+          test_split: 0.15
+          num_workers: 4
+          use_bbox_crop: true
+          num_classes: 120
+          raw_dir: data/raw/stanford_dogs
+          out_dir: data/processed
+          sources:
+            images: http://vision.stanford.edu/aditya86/ImageNetDogs/images.tar
+            annotations: 
+              http://vision.stanford.edu/aditya86/ImageNetDogs/annotation.tar
+          bbox_margin: 0.0
+          jpeg_quality: 95
+          seed: 42
+    outs:
+    - path: data/processed/test
+      hash: md5
+      md5: 89c8317adbe24d4c86f6144a379910d0.dir
+      size: 69864988
+      nfiles: 3099
+    - path: data/processed/train
+      hash: md5
+      md5: 516ac2c8d0a1ae64c98eab7c5074e0cd.dir
+      size: 325845956
+      nfiles: 14397
+    - path: data/processed/val
+      hash: md5
+      md5: f3e5d0af3f4426469a0d540f3ba61b42.dir
+      size: 70013566
+      nfiles: 3084
+    - path: reports/split_summary.json
+      hash: md5
+      md5: 2b4ae749b1a542e54bb1fb15930c5c69
+      size: 11046
