@@ -5,10 +5,12 @@ from __future__ import annotations
 import json
 from collections.abc import Iterable
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import torch
 import torch.nn.functional as F
+from sklearn.metrics import average_precision_score, roc_auc_score, roc_curve
 
 
 def compute_entropy(
@@ -119,6 +121,47 @@ def collect_entropy_scores(
 
     return torch.cat(collected_scores, dim=0)
 
+
+def validate_ood_scores(
+    id_scores: torch.Tensor,
+    ood_scores: torch.Tensor,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Validate and convert ID and OOD score tensors to NumPy arrays.
+
+    Higher scores must indicate a greater likelihood of being OOD.
+
+    Args:
+        id_scores: One-dimensional entropy scores for in-distribution samples.
+        ood_scores: One-dimensional entropy scores for OOD samples.
+
+    Returns:
+        Tuple containing validated ID and OOD NumPy arrays.
+
+    Raises:
+        ValueError: If either score tensor is invalid.
+    """
+    for name, scores in (
+        ("id_scores", id_scores),
+        ("ood_scores", ood_scores),
+    ):
+        if not torch.is_tensor(scores):
+            raise TypeError(f"{name} must be a torch.Tensor")
+
+        if scores.ndim != 1:
+            raise ValueError(f"{name} must be one-dimensional")
+
+        if scores.numel() == 0:
+            raise ValueError(f"{name} must not be empty")
+
+        if not torch.isfinite(scores).all():
+            raise ValueError(f"{name} must contain only finite values")
+
+    return (
+        id_scores.detach().cpu().numpy().astype(np.float64),
+        ood_scores.detach().cpu().numpy().astype(np.float64),
+    )
+
+
 def classify_ood(
     entropy_scores: torch.Tensor,
     threshold: float,
@@ -200,5 +243,115 @@ def save_threshold(
 
     output_path.write_text(
         json.dumps(payload, indent=2),
+        encoding="utf-8",
+    )
+    
+
+def compute_fpr_at_tpr(
+    labels: np.ndarray,
+    scores: np.ndarray,
+    target_tpr: float = 0.95,
+) -> float:
+    """Compute false-positive rate at the requested true-positive rate.
+
+    OOD samples are treated as the positive class.
+
+    Args:
+        labels: Binary labels where 1 means OOD and 0 means ID.
+        scores: OOD scores where higher values indicate greater OOD likelihood.
+        target_tpr: Desired OOD true-positive rate.
+
+    Returns:
+        False-positive rate at the first threshold reaching ``target_tpr``.
+
+    Raises:
+        ValueError: If ``target_tpr`` is outside the open interval (0, 1).
+    """
+    if not 0.0 < target_tpr < 1.0:
+        raise ValueError("target_tpr must be between 0 and 1")
+
+    false_positive_rates, true_positive_rates, _ = roc_curve(
+        labels,
+        scores,
+        pos_label=1,
+    )
+
+    eligible_indices = np.flatnonzero(true_positive_rates >= target_tpr)
+
+    if eligible_indices.size == 0:
+        return 1.0
+
+    return float(false_positive_rates[eligible_indices[0]])
+
+
+def compute_ood_metrics(
+    id_scores: torch.Tensor,
+    ood_scores: torch.Tensor,
+    target_tpr: float = 0.95,
+) -> dict[str, float | int]:
+    """Compute standard OOD detection metrics.
+
+    Entropy is used as the OOD score, so larger values indicate greater
+    uncertainty and a higher likelihood that a sample is OOD.
+
+    Metrics:
+        - AUROC: OOD samples are the positive class.
+        - AUPR-OUT: OOD samples are the positive class.
+        - AUPR-IN: ID samples are the positive class, using negated scores.
+        - FPR@TPR: Fraction of ID samples incorrectly classified as OOD at
+          the requested OOD true-positive rate.
+
+    Args:
+        id_scores: Entropy scores for in-distribution samples.
+        ood_scores: Entropy scores for OOD samples.
+        target_tpr: Target OOD true-positive rate for FPR calculation.
+
+    Returns:
+        Dictionary containing metrics and sample counts.
+    """
+    id_array, ood_array = validate_ood_scores(id_scores, ood_scores)
+
+    labels_out = np.concatenate(
+        [
+            np.zeros(id_array.shape[0], dtype=np.int64),
+            np.ones(ood_array.shape[0], dtype=np.int64),
+        ]
+    )
+    scores_out = np.concatenate([id_array, ood_array])
+
+    auroc = roc_auc_score(labels_out, scores_out)
+    aupr_out = average_precision_score(labels_out, scores_out)
+
+    labels_in = 1 - labels_out
+    scores_in = -scores_out
+    aupr_in = average_precision_score(labels_in, scores_in)
+
+    fpr_at_target_tpr = compute_fpr_at_tpr(
+        labels=labels_out,
+        scores=scores_out,
+        target_tpr=target_tpr,
+    )
+
+    return {
+        "auroc": float(auroc),
+        "fpr95": float(fpr_at_target_tpr),
+        "aupr_in": float(aupr_in),
+        "aupr_out": float(aupr_out),
+        "target_tpr": float(target_tpr),
+        "num_id_samples": int(id_array.shape[0]),
+        "num_ood_samples": int(ood_array.shape[0]),
+    }
+    
+    
+def save_metrics(
+    metrics: dict[str, Any],
+    output_path: str | Path,
+) -> None:
+    """Save OOD metrics to a JSON file."""
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    output_path.write_text(
+        json.dumps(metrics, indent=2),
         encoding="utf-8",
     )

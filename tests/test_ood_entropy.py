@@ -3,6 +3,7 @@
 import json
 import math
 
+import numpy as np
 import pytest
 import torch
 from torch import nn
@@ -13,7 +14,11 @@ from src.ood_entropy import (
     classify_ood,
     collect_entropy_scores,
     compute_entropy,
+    compute_fpr_at_tpr,
+    compute_ood_metrics,
+    save_metrics,
     save_threshold,
+    validate_ood_scores,
 )
 
 
@@ -248,3 +253,118 @@ def test_collect_entropy_scores_rejects_unsupported_batch() -> None:
             dataloader=invalid_dataloader,
             device=torch.device("cpu"),
         )
+        
+
+def test_perfectly_separated_scores_have_perfect_metrics() -> None:
+    id_scores = torch.tensor([0.1, 0.2, 0.3, 0.4])
+    ood_scores = torch.tensor([0.8, 0.9, 1.0, 1.1])
+
+    metrics = compute_ood_metrics(
+        id_scores=id_scores,
+        ood_scores=ood_scores,
+        target_tpr=0.95,
+    )
+
+    assert metrics["auroc"] == pytest.approx(1.0)
+    assert metrics["aupr_in"] == pytest.approx(1.0)
+    assert metrics["aupr_out"] == pytest.approx(1.0)
+    assert metrics["fpr95"] == pytest.approx(0.0)
+    assert metrics["num_id_samples"] == 4
+    assert metrics["num_ood_samples"] == 4
+
+
+def test_reversed_scores_have_poor_auroc() -> None:
+    id_scores = torch.tensor([0.8, 0.9, 1.0])
+    ood_scores = torch.tensor([0.1, 0.2, 0.3])
+
+    metrics = compute_ood_metrics(id_scores, ood_scores)
+
+    assert metrics["auroc"] == pytest.approx(0.0)
+
+
+def test_identical_score_distributions_have_chance_auroc() -> None:
+    id_scores = torch.tensor([0.1, 0.2, 0.3, 0.4])
+    ood_scores = torch.tensor([0.1, 0.2, 0.3, 0.4])
+
+    metrics = compute_ood_metrics(id_scores, ood_scores)
+
+    assert metrics["auroc"] == pytest.approx(0.5)
+
+
+def test_validate_ood_scores_returns_numpy_arrays() -> None:
+    id_scores = torch.tensor([0.1, 0.2])
+    ood_scores = torch.tensor([0.8, 0.9])
+
+    id_array, ood_array = validate_ood_scores(id_scores, ood_scores)
+
+    assert isinstance(id_array, np.ndarray)
+    assert isinstance(ood_array, np.ndarray)
+    assert id_array.dtype == np.float64
+    assert ood_array.dtype == np.float64
+
+
+@pytest.mark.parametrize(
+    ("id_scores", "ood_scores", "message"),
+    [
+        (torch.tensor([]), torch.tensor([0.5]), "id_scores must not be empty"),
+        (torch.tensor([0.1]), torch.tensor([]), "ood_scores must not be empty"),
+        (
+            torch.tensor([[0.1, 0.2]]),
+            torch.tensor([0.5]),
+            "id_scores must be one-dimensional",
+        ),
+        (
+            torch.tensor([0.1]),
+            torch.tensor([float("inf")]),
+            "ood_scores must contain only finite values",
+        ),
+    ],
+)
+def test_validate_ood_scores_rejects_invalid_inputs(
+    id_scores: torch.Tensor,
+    ood_scores: torch.Tensor,
+    message: str,
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        validate_ood_scores(id_scores, ood_scores)
+
+
+def test_compute_fpr_at_tpr_for_perfect_separation() -> None:
+    labels = np.array([0, 0, 0, 1, 1, 1])
+    scores = np.array([0.1, 0.2, 0.3, 0.8, 0.9, 1.0])
+
+    fpr = compute_fpr_at_tpr(
+        labels=labels,
+        scores=scores,
+        target_tpr=0.95,
+    )
+
+    assert fpr == pytest.approx(0.0)
+
+
+@pytest.mark.parametrize("target_tpr", [0.0, 1.0, -0.2, 1.2])
+def test_compute_fpr_rejects_invalid_target_tpr(
+    target_tpr: float,
+) -> None:
+    labels = np.array([0, 1])
+    scores = np.array([0.1, 0.9])
+
+    with pytest.raises(ValueError, match="between 0 and 1"):
+        compute_fpr_at_tpr(labels, scores, target_tpr)
+
+
+def test_save_metrics_writes_json(tmp_path) -> None:
+    output_path = tmp_path / "strategy_a_metrics.json"
+
+    metrics = {
+        "auroc": 0.91,
+        "fpr95": 0.22,
+        "aupr_in": 0.89,
+        "aupr_out": 0.93,
+    }
+
+    save_metrics(metrics, output_path)
+
+    saved = json.loads(output_path.read_text(encoding="utf-8"))
+
+    assert saved == metrics
