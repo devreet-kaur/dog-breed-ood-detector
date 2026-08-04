@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 import torch
@@ -12,6 +13,13 @@ from torch.utils.data import DataLoader, Dataset, WeightedRandomSampler
 from torchvision import transforms
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+
+@dataclass
+class EpochMetrics:
+    """Loss and accuracy recorded for one epoch."""
+
+    loss: float
+    accuracy: float
 
 class DogOODDataset(Dataset):
     """Binary image dataset for dog-versus-OOD classification.
@@ -286,6 +294,45 @@ def build_binary_dataloaders(
 
     return training_loader, validation_loader
 
+def train_one_epoch(
+    model: nn.Module,
+    dataloader: DataLoader,
+    optimizer: torch.optim.Optimizer,
+    criterion: nn.Module,
+    device: torch.device,
+) -> EpochMetrics:
+    """Train the binary classifier for one epoch."""
+    model.train()
+
+    total_loss = 0.0
+    total_correct = 0
+    total_samples = 0
+
+    for images, labels in dataloader:
+        images = images.to(device)
+        labels = labels.to(device)
+
+        optimizer.zero_grad()
+
+        logits = model(images)
+        loss = criterion(logits, labels)
+
+        loss.backward()
+        optimizer.step()
+
+        batch_size = labels.size(0)
+
+        total_loss += loss.item() * batch_size
+        total_correct += (logits.argmax(dim=1) == labels).sum().item()
+        total_samples += batch_size
+
+    if total_samples == 0:
+        raise ValueError("training dataloader did not provide any samples")
+
+    return EpochMetrics(
+        loss=total_loss / total_samples,
+        accuracy=total_correct / total_samples,
+    )
 
 def build_balanced_sampler(
     labels: list[int],
@@ -318,3 +365,50 @@ def build_balanced_sampler(
         replacement=True,
         generator=generator,
     )
+    
+    
+@torch.inference_mode()
+def validate_one_epoch(
+    model: nn.Module,
+    dataloader: DataLoader,
+    criterion: nn.Module,
+    device: torch.device,
+) -> EpochMetrics:
+    """Evaluate the binary classifier for one epoch."""
+    model.eval()
+
+    total_loss = 0.0
+    total_correct = 0
+    total_samples = 0
+
+    for images, labels in dataloader:
+        images = images.to(device)
+        labels = labels.to(device)
+
+        logits = model(images)
+        loss = criterion(logits, labels)
+
+        batch_size = labels.size(0)
+
+        total_loss += loss.item() * batch_size
+        total_correct += (logits.argmax(dim=1) == labels).sum().item()
+        total_samples += batch_size
+
+    if total_samples == 0:
+        raise ValueError("validation dataloader did not provide any samples")
+
+    return EpochMetrics(
+        loss=total_loss / total_samples,
+        accuracy=total_correct / total_samples,
+    )
+    
+    
+def save_binary_checkpoint(
+    model: nn.Module,
+    output_path: str | Path,
+) -> None:
+    """Save the binary model state dictionary."""
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    torch.save(model.state_dict(), output_path)

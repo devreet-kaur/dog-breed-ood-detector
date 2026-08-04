@@ -5,21 +5,37 @@ from pathlib import Path
 import pytest
 import torch
 from PIL import Image
+from torch import nn
+from torch.utils.data import DataLoader, TensorDataset
 
 from src.ood_binary import (
     BinaryCNN,
     DogOODDataset,
+    EpochMetrics,
     build_balanced_sampler,
     build_binary_dataloaders,
     build_binary_transforms,
     discover_image_files,
+    save_binary_checkpoint,
     split_files,
+    train_one_epoch,
+    validate_one_epoch,
 )
 
 
 def create_test_image(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     Image.new("RGB", (32, 32), color=(120, 80, 40)).save(path)
+
+class TinyBinaryClassifier(nn.Module):
+    """Small classifier for training-loop tests."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.classifier = nn.Linear(4, 2)
+
+    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+        return self.classifier(inputs)
 
 def test_binary_cnn_output_shape() -> None:
     model = BinaryCNN(dropout=0.3)
@@ -205,3 +221,123 @@ def test_balanced_sampler_rejects_single_class() -> None:
 def test_balanced_sampler_rejects_empty_labels() -> None:
     with pytest.raises(ValueError, match="must not be empty"):
         build_balanced_sampler(labels=[], seed=42)
+        
+        
+def test_train_one_epoch_returns_metrics() -> None:
+    features = torch.randn(8, 4)
+    labels = torch.tensor([0, 1, 0, 1, 0, 1, 0, 1])
+
+    dataloader = DataLoader(
+        TensorDataset(features, labels),
+        batch_size=4,
+        shuffle=False,
+    )
+
+    model = TinyBinaryClassifier()
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+    criterion = nn.CrossEntropyLoss()
+
+    metrics = train_one_epoch(
+        model=model,
+        dataloader=dataloader,
+        optimizer=optimizer,
+        criterion=criterion,
+        device=torch.device("cpu"),
+    )
+
+    assert isinstance(metrics, EpochMetrics)
+    assert metrics.loss >= 0.0
+    assert 0.0 <= metrics.accuracy <= 1.0
+
+
+def test_train_one_epoch_updates_parameters() -> None:
+    features = torch.randn(8, 4)
+    labels = torch.tensor([0, 1, 0, 1, 0, 1, 0, 1])
+
+    dataloader = DataLoader(
+        TensorDataset(features, labels),
+        batch_size=4,
+    )
+
+    model = TinyBinaryClassifier()
+    initial_weights = model.classifier.weight.detach().clone()
+
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+    criterion = nn.CrossEntropyLoss()
+
+    train_one_epoch(
+        model=model,
+        dataloader=dataloader,
+        optimizer=optimizer,
+        criterion=criterion,
+        device=torch.device("cpu"),
+    )
+
+    assert not torch.equal(
+        initial_weights,
+        model.classifier.weight.detach(),
+    )
+
+
+def test_validate_one_epoch_does_not_update_parameters() -> None:
+    features = torch.randn(6, 4)
+    labels = torch.tensor([0, 1, 0, 1, 0, 1])
+
+    dataloader = DataLoader(
+        TensorDataset(features, labels),
+        batch_size=3,
+    )
+
+    model = TinyBinaryClassifier()
+    initial_weights = model.classifier.weight.detach().clone()
+
+    metrics = validate_one_epoch(
+        model=model,
+        dataloader=dataloader,
+        criterion=nn.CrossEntropyLoss(),
+        device=torch.device("cpu"),
+    )
+
+    assert torch.equal(
+        initial_weights,
+        model.classifier.weight.detach(),
+    )
+    assert metrics.loss >= 0.0
+    assert 0.0 <= metrics.accuracy <= 1.0
+
+
+def test_validate_one_epoch_sets_evaluation_mode() -> None:
+    features = torch.randn(4, 4)
+    labels = torch.tensor([0, 1, 0, 1])
+
+    model = TinyBinaryClassifier()
+    model.train()
+
+    validate_one_epoch(
+        model=model,
+        dataloader=DataLoader(
+            TensorDataset(features, labels),
+            batch_size=2,
+        ),
+        criterion=nn.CrossEntropyLoss(),
+        device=torch.device("cpu"),
+    )
+
+    assert model.training is False
+
+
+def test_save_binary_checkpoint_creates_file(tmp_path) -> None:
+    output_path = tmp_path / "models" / "binary_cnn.pt"
+    model = TinyBinaryClassifier()
+
+    save_binary_checkpoint(model, output_path)
+
+    assert output_path.exists()
+
+    saved_state = torch.load(
+        output_path,
+        map_location="cpu",
+        weights_only=True,
+    )
+
+    assert saved_state.keys() == model.state_dict().keys()
