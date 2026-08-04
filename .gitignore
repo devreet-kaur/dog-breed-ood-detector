@@ -4,6 +4,9 @@
 # ══════════════════════════════════════════════════════
 
 # ── Data -- DVC tracked, never in Git ────────────────
+# The negations matter: `data/` alone also hides the .dvc pointer files, which
+# are the one thing under data/ that MUST be committed. Without them
+# `dvc add data/raw/stanford_dogs` produces a file git silently refuses to stage.
 data/**
 !data/**/
 !data/**/*.dvc
@@ -67,6 +70,14 @@ venv.bak/
 .secrets/
 *service-account*.json
 *credentials*.json
+
+# ── Local scratch (never commit) ─────────────────────
+check.py
+scratch*.py
+tmp*.py
+*_scratch.py
+*token*.txt
+secrets.*
 
 # ── Jupyter ───────────────────────────────────────────
 .ipynb_checkpoints/

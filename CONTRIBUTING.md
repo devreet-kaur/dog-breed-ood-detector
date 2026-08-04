@@ -78,43 +78,68 @@ Use Merge commit for the final dev into main PR (#10).
 
 ## Data and DVC
 
-The remote is a **shared Google Drive folder**, accessed through the Google Drive
-for Desktop mount rather than the Drive API. There is no token and no service
-account to configure -- if you can see the folder in Explorer/Finder, DVC can
-use it.
+The remote is a **shared Google Drive folder**, reached through the Google Drive
+API. The URL in `.dvc/config` is `gdrive://<folder-id>`, which means the same
+thing on every machine -- Windows or macOS, with or without Google Drive for
+Desktop installed. You do not need to mount anything.
 
-It used to be a HuggingFace WebDAV remote. That is gone, and any HF token you
-still have lying around should be revoked.
+It used to be a HuggingFace WebDAV remote, and briefly a local mount path. Both
+are gone. Any HF token you still have lying around should be revoked.
 
-One-time setup per person:
+### One-time setup per person
 
-1. Install [Google Drive for Desktop](https://www.google.com/drive/download/)
-   and sign in with the account the `dog-breed-ood-dvc` folder is shared with.
-2. Wait for the folder to appear in your mount.
-3. Point DVC at *your* mount path. The committed default is Ryan's Windows
-   path, so everyone else overrides it locally:
+You need two values from Ryan (posted in the group chat, never in this repo):
+a **client ID** and a **client secret**. These belong to our own Google Cloud
+OAuth app -- DVC's built-in one is blocked by Google.
 
 ```bash
-# Windows (adjust the drive letter if yours differs)
-dvc remote modify --local gdrive_remote url "G:/My Drive/dog-breed-ood-dvc"
+pip install -r requirements.txt
 
-# macOS
-dvc remote modify --local gdrive_remote url \
-    "/Volumes/GoogleDrive/My Drive/dog-breed-ood-dvc"
+dvc remote modify --local gdrive_remote gdrive_client_id "<CLIENT_ID>"
+dvc remote modify --local gdrive_remote gdrive_client_secret "<CLIENT_SECRET>"
 
-dvc pull
+dvc pull prepare
 ```
 
-`--local` writes to `.dvc/config.local`, which is git-ignored -- so your machine's
-path never ends up in a PR.
+On the first `dvc pull` a browser opens. Sign in with **the Google account the
+Drive folder was shared with** -- if you use a different one, you will get
+"This app is blocked", because only listed test users are allowed. You will also
+see an "unverified app" warning: click **Advanced -> Go to DVC dogbreed**. That
+is expected for an app Google has not reviewed.
 
-Everyday use: `dvc pull` to get data, `dvc push` after a pipeline run, and commit
-the resulting `.dvc` / `dvc.lock` files.
+`--local` writes to `.dvc/config.local`, which is git-ignored. **Never commit
+these credentials** -- this repository is public.
 
-**Be patient after a push.** DVC writes thousands of small files, and Drive for
-Desktop syncs them in the background. `dvc push` returning is not the same as
-the data being uploaded -- check the Drive icon in your system tray before
-telling someone else to pull.
+### Everyday use
+
+`dvc pull` to get data, `dvc push` after a pipeline run, and commit the
+resulting `.dvc` / `dvc.lock` files.
+
+Use `dvc pull prepare` rather than a bare `dvc pull` until the `train` stage has
+been run at least once. Bare `dvc pull` tries to check out
+`models/resnet18_best.pt`, which `dvc.yaml` declares but which does not exist
+until someone runs `dvc repro train` and pushes.
+
+### Gotchas
+
+**Windows path length.** DVC's run cache stacks two 64-character hashes, which
+can exceed Windows' 260-character `MAX_PATH` limit and make `dvc repro` fail
+with `[Errno 2]`. Clone into a short path such as `C:\dev\`, not
+`OneDrive\Desktop\...`. Or enable long paths:
+
+```powershell
+New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" `
+  -Name "LongPathsEnabled" -Value 1 -PropertyType DWORD -Force
+git config --global core.longpaths true
+```
+
+**Do not put the repo inside OneDrive or Google Drive.** Sync clients grab
+`.git` files mid-write and corrupt them, and they will try to sync your entire
+`.dvc/cache` -- tens of thousands of files. Keep the working copy on plain local
+disk. The DVC remote is the backup; the working copy does not need syncing.
+
+**Storage.** The Drive folder lives on a 15 GB account. The dataset is ~2.4 GB.
+Keep an eye on headroom before pushing model checkpoints.
 
 ## What never goes in Git
 
