@@ -38,7 +38,6 @@ from pathlib import Path
 
 import yaml
 from PIL import Image
-from tqdm import tqdm
 
 PARAMS_PATH = Path("params.yaml")
 STAGING_DIR = Path("data/raw/ood_staging")
@@ -50,16 +49,16 @@ IMG_SIZE = 224  # OOD images are saved square to match the classifier input
 # Category -> (HF dataset, config, split, image column, label column, label value)
 # Used only in the automatic HF path. Edit freely if a dataset moves.
 SOURCES = {
-    "cats": dict(dataset="microsoft/cats_vs_dogs", split="train",
-                 image_col="image", label_col="labels", keep=0),
-    "birds": dict(dataset="cassiekang/cub200_dataset", split="train",
-                  image_col="image", label_col=None, keep=None),
-    "cars": dict(dataset="tanganke/stanford_cars", split="train",
-                 image_col="image", label_col=None, keep=None),
-    "food": dict(dataset="ethz/food101", split="train",
-                 image_col="image", label_col=None, keep=None),
-    "furniture": dict(dataset="Arkan0ID/furniture-dataset", split="train",
-                      image_col="image", label_col=None, keep=None),
+    "cats": {"dataset": "microsoft/cats_vs_dogs", "split": "train",
+             "image_col": "image", "label_col": "labels", "keep": 0},
+    "birds": {"dataset": "cassiekang/cub200_dataset", "split": "train",
+              "image_col": "image", "label_col": None, "keep": None},
+    "cars": {"dataset": "tanganke/stanford_cars", "split": "train",
+             "image_col": "image", "label_col": None, "keep": None},
+    "food": {"dataset": "ethz/food101", "split": "train",
+             "image_col": "image", "label_col": None, "keep": None},
+    "furniture": {"dataset": "Arkan0ID/furniture-dataset", "split": "train",
+                  "image_col": "image", "label_col": None, "keep": None},
 }
 
 
@@ -85,7 +84,7 @@ def split_and_write(
     """Shuffle a category's images and write val_split to val/, the rest to test/."""
     idx = list(range(len(images)))
     random.Random(seed).shuffle(idx)
-    n_val = int(round(len(idx) * val_split))
+    n_val = round(len(idx) * val_split)
     val_idx, test_idx = set(idx[:n_val]), set(idx[n_val:])
 
     for split_name, keep_idx in [("val", val_idx), ("test", test_idx)]:
@@ -139,16 +138,25 @@ def build_from_huggingface(categories, images_per_category, val_split) -> None:
                 cfg["dataset"], split=cfg["split"], streaming=True)
             collected: list[Image.Image] = []
             for row in ds:
-                if cfg["label_col"] and cfg["keep"] is not None:
-                    if row[cfg["label_col"]] != cfg["keep"]:
-                        continue
+                # Some sources need filtering to one label (e.g. cats out of
+                # cats_vs_dogs); others are already single-category.
+                if (
+                    cfg["label_col"]
+                    and cfg["keep"] is not None
+                    and row[cfg["label_col"]] != cfg["keep"]
+                ):
+                    continue
                 img = row[cfg["image_col"]]
                 if not isinstance(img, Image.Image):
                     continue
                 collected.append(img.convert("RGB"))
                 if len(collected) >= images_per_category:
                     break
-        except Exception as e:  # network / schema / auth issues -> actionable message
+        # Blind catch is deliberate: HF datasets get renamed, re-schemad and
+        # rate-limited without warning, and `datasets` raises a different type
+        # for each. Catching them all and printing the --from-staging fallback
+        # is more useful to the next person than an unhandled traceback.
+        except Exception as e:  # noqa: BLE001
             raise SystemExit(
                 f"[ood] Could not pull '{category}' from HF ({e}). "
                 f"Fall back to: python src/download_ood.py --from-staging"
