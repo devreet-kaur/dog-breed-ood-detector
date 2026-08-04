@@ -9,6 +9,7 @@ from PIL import Image
 from src.ood_binary import (
     BinaryCNN,
     DogOODDataset,
+    build_balanced_sampler,
     build_binary_dataloaders,
     build_binary_transforms,
     discover_image_files,
@@ -172,3 +173,35 @@ def test_binary_dataloaders_return_binary_batches(tmp_path) -> None:
     assert val_images.shape[1:] == (3, 32, 32)
     assert set(train_labels.tolist()).issubset({0, 1})
     assert set(val_labels.tolist()).issubset({0, 1})
+    
+    
+def test_balanced_sampler_assigns_higher_weight_to_minority_class() -> None:
+    labels = [0, 0, 0, 0, 1]
+
+    sampler = build_balanced_sampler(labels=labels, seed=42)
+
+    weights = list(sampler.weights)
+
+    assert weights[4] > weights[0]
+
+
+def test_balanced_sampler_draws_both_classes() -> None:
+    labels = [0] * 20 + [1] * 2
+
+    sampler = build_balanced_sampler(labels=labels, seed=42)
+
+    sampled_indices = list(iter(sampler))
+    sampled_labels = [labels[index] for index in sampled_indices]
+
+    assert 0 in sampled_labels
+    assert 1 in sampled_labels
+
+
+def test_balanced_sampler_rejects_single_class() -> None:
+    with pytest.raises(ValueError, match="both binary classes"):
+        build_balanced_sampler(labels=[0, 0, 0], seed=42)
+
+
+def test_balanced_sampler_rejects_empty_labels() -> None:
+    with pytest.raises(ValueError, match="must not be empty"):
+        build_balanced_sampler(labels=[], seed=42)

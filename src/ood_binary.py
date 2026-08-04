@@ -8,7 +8,7 @@ from pathlib import Path
 import torch
 from PIL import Image
 from torch import nn
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, WeightedRandomSampler
 from torchvision import transforms
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
@@ -258,10 +258,20 @@ def build_binary_dataloaders(
         transform=evaluation_transform,
     )
 
+    training_labels = [
+        label
+        for _, label in training_dataset.samples
+    ]
+
+    training_sampler = build_balanced_sampler(
+        labels=training_labels,
+        seed=seed,
+    )
+
     training_loader = DataLoader(
         training_dataset,
         batch_size=batch_size,
-        shuffle=True,
+        sampler=training_sampler,
         num_workers=num_workers,
         pin_memory=torch.cuda.is_available(),
     )
@@ -275,3 +285,36 @@ def build_binary_dataloaders(
     )
 
     return training_loader, validation_loader
+
+
+def build_balanced_sampler(
+    labels: list[int],
+    seed: int,
+) -> WeightedRandomSampler:
+    """Create a sampler that balances the two binary classes."""
+    if not labels:
+        raise ValueError("labels must not be empty")
+
+    unique_labels = set(labels)
+
+    if unique_labels != {0, 1}:
+        raise ValueError("labels must contain both binary classes 0 and 1")
+
+    class_counts = {
+        label: labels.count(label)
+        for label in unique_labels
+    }
+
+    sample_weights = [
+        1.0 / class_counts[label]
+        for label in labels
+    ]
+
+    generator = torch.Generator().manual_seed(seed)
+
+    return WeightedRandomSampler(
+        weights=sample_weights,
+        num_samples=len(sample_weights),
+        replacement=True,
+        generator=generator,
+    )
