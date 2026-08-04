@@ -1,11 +1,17 @@
 """Tests for entropy-based OOD utilities."""
 
+import json
 import math
 
 import pytest
 import torch
 
-from src.ood_entropy import classify_ood, compute_entropy
+from src.ood_entropy import (
+    calibrate_threshold,
+    classify_ood,
+    compute_entropy,
+    save_threshold,
+)
 
 
 def test_uniform_logits_have_maximum_entropy() -> None:
@@ -66,3 +72,60 @@ def test_classify_ood_uses_strict_threshold() -> None:
 
     expected = torch.tensor([False, False, True])
     assert torch.equal(predictions, expected)
+    
+
+def test_calibrate_threshold_uses_target_quantile() -> None:
+    scores = torch.tensor([0.1, 0.2, 0.3, 0.4, 0.5])
+
+    threshold = calibrate_threshold(scores, target_tpr=0.8)
+
+    expected = torch.quantile(scores, 0.8).item()
+    assert threshold == pytest.approx(expected)
+
+
+def test_calibrated_threshold_accepts_expected_fraction_of_id_samples() -> None:
+    scores = torch.linspace(0.0, 1.0, steps=101)
+
+    threshold = calibrate_threshold(scores, target_tpr=0.95)
+    accepted_fraction = (scores <= threshold).float().mean().item()
+
+    assert accepted_fraction == pytest.approx(0.95, abs=0.02)
+
+
+@pytest.mark.parametrize("target_tpr", [0.0, 1.0, -0.1, 1.1])
+def test_invalid_target_tpr_raises_error(target_tpr: float) -> None:
+    scores = torch.tensor([0.1, 0.2])
+
+    with pytest.raises(ValueError, match="between 0 and 1"):
+        calibrate_threshold(scores, target_tpr=target_tpr)
+
+
+def test_empty_entropy_scores_raise_error() -> None:
+    with pytest.raises(ValueError, match="must not be empty"):
+        calibrate_threshold(torch.tensor([]))
+
+
+def test_nonfinite_entropy_scores_raise_error() -> None:
+    scores = torch.tensor([0.1, float("nan")])
+
+    with pytest.raises(ValueError, match="finite"):
+        calibrate_threshold(scores)
+
+
+def test_save_threshold_writes_expected_json(tmp_path) -> None:
+    output_path = tmp_path / "entropy_threshold.json"
+
+    save_threshold(
+        threshold=1.234,
+        output_path=output_path,
+        target_tpr=0.95,
+        num_validation_samples=3084,
+    )
+
+    saved = json.loads(output_path.read_text(encoding="utf-8"))
+
+    assert saved == {
+        "threshold": 1.234,
+        "target_tpr": 0.95,
+        "num_validation_samples": 3084,
+    }    
