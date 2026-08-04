@@ -14,13 +14,6 @@
 FROM python:3.11-slim
 
 # System dependencies for OpenCV and image processing
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libglib2.0-0 \
-    libgl1-mesa-glx \
-    libsm6 \
-    libxext6 \
-    libxrender-dev \
-    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -40,12 +33,9 @@ COPY params.yaml .
 
 # Copy model artifacts and data if they exist
 # These are optional at build time -- mounted via volume in docker-compose
-COPY models/ ./models/ 2>/dev/null || true
-COPY data/processed/class_names.json ./data/processed/class_names.json 2>/dev/null || true
-COPY reports/ood/ ./reports/ood/ 2>/dev/null || true
 
 # Non-root user for security
-RUN useradd --create-home appuser
+RUN useradd --create-home appuser && chown -R appuser:appuser /app
 USER appuser
 
 EXPOSE 8000
@@ -57,4 +47,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
 # Start server
 # Port is always 8000 inside the container
 # docker-compose maps 5001:8000 on macOS, 8000:8000 on Windows/Linux
-CMD ["uvicorn", "src.app:app", "--host", "0.0.0.0", "--port", "8000"]
+ENV PYTHONPATH=/app
+CMD ["uvicorn", "app:app", "--app-dir", "src", "--host", "0.0.0.0", "--port", "8000"]
