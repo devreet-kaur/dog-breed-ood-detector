@@ -1,0 +1,62 @@
+# .dockerignore
+# Keep the Docker build context small and clean
+
+# Git
+.git/
+.gitignore
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# DVC
+.dvc/tmp/
+.dvc/config.local
+
+# Data -- mounted as volume at runtime, not baked into image
+data/raw/
+data/processed/
+
+# Model files -- mounted as volume at runtime
+# models/ is intentionally included for build
+# Remove this comment if you want to bake models into the image
+
+# MLflow
+mlruns/
+mlflow.db
+
+# Reports (except OOD threshold which API needs)
+reports/eda_plots/
+reports/plots/
+reports/drift/
+reports/calibration/
+reports/gradcam/
+
+# Notebooks
+notebooks/
+
+# Tests (not needed in production image)
+tests/
+
+# IDE
+.vscode/
+.idea/
+
+# macOS
+.DS_Store
+
+# Secrets
+.env
+.env.*
+.secrets/
+credentials.json
+service-account.json
