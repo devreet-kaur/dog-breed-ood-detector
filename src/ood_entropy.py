@@ -2,14 +2,20 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.nn.functional as F
+import yaml
 from sklearn.metrics import average_precision_score, roc_auc_score, roc_curve
 
 
@@ -355,3 +361,160 @@ def save_metrics(
         json.dumps(metrics, indent=2),
         encoding="utf-8",
     )
+    
+
+def load_config(config_path: str | Path) -> dict[str, Any]:
+    """Load and validate the project YAML configuration."""
+    config_path = Path(config_path)
+
+    if not config_path.exists():
+        raise FileNotFoundError(f"Configuration file not found: {config_path}")
+
+    with config_path.open("r", encoding="utf-8") as config_file:
+        config = yaml.safe_load(config_file)
+
+    if not isinstance(config, dict):
+        raise TypeError("Configuration file must contain a YAML mapping")
+
+    if "ood_entropy" not in config:
+        raise KeyError("Configuration is missing the 'ood_entropy' section")
+
+    required_keys = {"temperature", "target_tpr"}
+    missing_keys = required_keys - set(config["ood_entropy"])
+
+    if missing_keys:
+        missing = ", ".join(sorted(missing_keys))
+        raise KeyError(f"ood_entropy configuration is missing: {missing}")
+
+    return config
+
+
+def plot_entropy_distribution(
+    id_scores: torch.Tensor,
+    ood_scores: torch.Tensor,
+    threshold: float,
+    output_path: str | Path,
+    bins: int = 40,
+) -> None:
+    """Plot ID and OOD entropy distributions with the calibrated threshold."""
+    id_array, ood_array = validate_ood_scores(id_scores, ood_scores)
+
+    if not np.isfinite(threshold):
+        raise ValueError("threshold must be finite")
+
+    if bins <= 0:
+        raise ValueError("bins must be greater than zero")
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    plt.figure(figsize=(10, 6))
+
+    plt.hist(
+        id_array,
+        bins=bins,
+        alpha=0.65,
+        label="In-distribution",
+        density=True,
+        edgecolor="black",
+        linewidth=0.4,
+    )
+
+    plt.hist(
+        ood_array,
+        bins=bins,
+        alpha=0.65,
+        label="Out-of-distribution",
+        density=True,
+        edgecolor="black",
+        linewidth=0.4,
+    )
+
+    plt.axvline(
+        threshold,
+        linestyle="--",
+        linewidth=2,
+        label=f"Threshold = {threshold:.4f}",
+    )
+
+    plt.title("Entropy Distribution: ID vs OOD")
+    plt.xlabel("Predictive Entropy")
+    plt.ylabel("Density")
+    plt.legend()
+    plt.grid(axis="y", linestyle="--", alpha=0.3)
+    plt.tight_layout()
+
+    plt.savefig(
+        output_path,
+        dpi=300,
+        bbox_inches="tight",
+    )
+
+    plt.close()
+
+
+def parse_args() -> argparse.Namespace:
+    """Parse command-line arguments for entropy-based OOD detection."""
+    parser = argparse.ArgumentParser(
+        description="Entropy-based out-of-distribution detection"
+    )
+
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=Path("params.yaml"),
+        help="Path to the project YAML configuration.",
+    )
+
+    parser.add_argument(
+        "--checkpoint",
+        type=Path,
+        default=Path("models/resnet18_best.pt"),
+        help="Path to the trained ResNet-18 checkpoint.",
+    )
+
+    parser.add_argument(
+        "--threshold-output",
+        type=Path,
+        default=Path("reports/ood/entropy_threshold.json"),
+        help="Path for calibrated threshold metadata.",
+    )
+
+    parser.add_argument(
+        "--metrics-output",
+        type=Path,
+        default=Path("reports/ood/strategy_a_metrics.json"),
+        help="Path for Strategy A metrics.",
+    )
+
+    parser.add_argument(
+        "--plot-output",
+        type=Path,
+        default=Path("reports/ood/entropy_distribution.png"),
+        help="Path for the entropy-distribution plot.",
+    )
+
+    return parser.parse_args()
+
+def main() -> None:
+    """Validate configuration and report pending model integration."""
+    args = parse_args()
+    config = load_config(args.config)
+
+    entropy_config = config["ood_entropy"]
+
+    print("Entropy-based OOD Detection")
+    print("-" * 40)
+    print(f"Temperature: {entropy_config['temperature']}")
+    print(f"Target TPR:  {entropy_config['target_tpr']}")
+    print(f"Checkpoint:  {args.checkpoint}")
+    print()
+    print(
+        "Configuration validated successfully. "
+        "Real-model inference will be enabled after the trained "
+        "ResNet-18 checkpoint is available."
+    )
+
+
+if __name__ == "__main__":
+    main()

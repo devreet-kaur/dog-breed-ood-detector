@@ -16,6 +16,8 @@ from src.ood_entropy import (
     compute_entropy,
     compute_fpr_at_tpr,
     compute_ood_metrics,
+    load_config,
+    plot_entropy_distribution,
     save_metrics,
     save_threshold,
     validate_ood_scores,
@@ -368,3 +370,109 @@ def test_save_metrics_writes_json(tmp_path) -> None:
     saved = json.loads(output_path.read_text(encoding="utf-8"))
 
     assert saved == metrics
+    
+    
+def test_load_config_reads_entropy_parameters(tmp_path) -> None:
+    config_path = tmp_path / "params.yaml"
+    config_path.write_text(
+        """
+ood_entropy:
+  temperature: 1.5
+  target_tpr: 0.95
+""".strip(),
+        encoding="utf-8",
+    )
+
+    config = load_config(config_path)
+
+    assert config["ood_entropy"]["temperature"] == 1.5
+    assert config["ood_entropy"]["target_tpr"] == 0.95
+
+
+def test_load_config_rejects_missing_file(tmp_path) -> None:
+    config_path = tmp_path / "missing.yaml"
+
+    with pytest.raises(FileNotFoundError, match="not found"):
+        load_config(config_path)
+
+
+def test_load_config_rejects_missing_entropy_section(tmp_path) -> None:
+    config_path = tmp_path / "params.yaml"
+    config_path.write_text(
+        "data:\n  img_size: 224\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(KeyError, match="ood_entropy"):
+        load_config(config_path)
+
+
+def test_load_config_rejects_missing_entropy_key(tmp_path) -> None:
+    config_path = tmp_path / "params.yaml"
+    config_path.write_text(
+        """
+ood_entropy:
+  temperature: 1.0
+""".strip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(KeyError, match="target_tpr"):
+        load_config(config_path)
+        
+        
+def test_plot_entropy_distribution_creates_file(tmp_path) -> None:
+    id_scores = torch.tensor([0.1, 0.2, 0.3, 0.4])
+    ood_scores = torch.tensor([0.8, 0.9, 1.0, 1.1])
+    output_path = tmp_path / "entropy_distribution.png"
+
+    plot_entropy_distribution(
+        id_scores=id_scores,
+        ood_scores=ood_scores,
+        threshold=0.6,
+        output_path=output_path,
+        bins=10,
+    )
+
+    assert output_path.exists()
+    assert output_path.stat().st_size > 0
+
+
+def test_plot_entropy_distribution_creates_parent_directory(
+    tmp_path,
+) -> None:
+    output_path = tmp_path / "nested" / "plots" / "entropy.png"
+
+    plot_entropy_distribution(
+        id_scores=torch.tensor([0.1, 0.2]),
+        ood_scores=torch.tensor([0.8, 0.9]),
+        threshold=0.5,
+        output_path=output_path,
+    )
+
+    assert output_path.exists()
+
+
+def test_plot_entropy_distribution_rejects_invalid_bins(
+    tmp_path,
+) -> None:
+    with pytest.raises(ValueError, match="bins must be greater than zero"):
+        plot_entropy_distribution(
+            id_scores=torch.tensor([0.1]),
+            ood_scores=torch.tensor([0.9]),
+            threshold=0.5,
+            output_path=tmp_path / "plot.png",
+            bins=0,
+        )
+
+
+def test_plot_entropy_distribution_rejects_nonfinite_threshold(
+    tmp_path,
+) -> None:
+    with pytest.raises(ValueError, match="threshold must be finite"):
+        plot_entropy_distribution(
+            id_scores=torch.tensor([0.1]),
+            ood_scores=torch.tensor([0.9]),
+            threshold=float("nan"),
+            output_path=tmp_path / "plot.png",
+        )
