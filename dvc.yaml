@@ -1,4 +1,30 @@
 stages:
+  # Raw Stanford Dogs is a pipeline *input*, not a stage output -- it is tracked
+  # separately with `dvc add data/raw/stanford_dogs`. A fresh clone does:
+  #     dvc pull            # brings down raw + processed
+  #     dvc repro prepare   # no-op if nothing changed, deterministic if it runs
+  prepare:
+    desc: Crop Stanford Dogs to their bounding boxes and split 70/15/15 per breed.
+    cmd: python src/prepare.py
+    deps:
+      - src/prepare.py
+      - data/raw/stanford_dogs/Images
+      - data/raw/stanford_dogs/Annotation
+    # params.yaml is deliberately NOT in deps. Listing the whole file there
+    # would re-run this six-minute stage whenever anyone touched train_head,
+    # ood_binary, etc. The params block below is precise: only the `data`
+    # section invalidates prepare.
+    params:
+      - params.yaml:
+          - data
+    outs:
+      - data/processed/train
+      - data/processed/val
+      - data/processed/test
+    metrics:
+      - reports/split_summary.json:
+          cache: false
+
   train:
     cmd: python src/train.py --stage head && python src/train.py --stage finetune
     deps:

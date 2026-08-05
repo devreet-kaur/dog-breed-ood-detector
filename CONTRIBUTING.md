@@ -27,7 +27,7 @@ type: short description in lowercase
 
 Examples:
 feat: add bounding box crop to prepare.py
-chore: initialize DVC with HuggingFace remote
+chore: initialize DVC with Google Drive remote
 fix: correct entropy threshold calibration
 docs: update model card with final metrics
 test: add edge case tests for invalid image input
@@ -76,6 +76,71 @@ ruff check src/ tests/
 Use Squash and merge for feature branches into dev.
 Use Merge commit for the final dev into main PR (#10).
 
+## Data and DVC
+
+The remote is a **shared Google Drive folder**, reached through the Google Drive
+API. The URL in `.dvc/config` is `gdrive://<folder-id>`, which means the same
+thing on every machine -- Windows or macOS, with or without Google Drive for
+Desktop installed. You do not need to mount anything.
+
+It used to be a HuggingFace WebDAV remote, and briefly a local mount path. Both
+are gone. Any HF token you still have lying around should be revoked.
+
+### One-time setup per person
+
+You need two values from Ryan (posted in the group chat, never in this repo):
+a **client ID** and a **client secret**. These belong to our own Google Cloud
+OAuth app -- DVC's built-in one is blocked by Google.
+
+```bash
+pip install -r requirements.txt
+
+dvc remote modify --local gdrive_remote gdrive_client_id "<CLIENT_ID>"
+dvc remote modify --local gdrive_remote gdrive_client_secret "<CLIENT_SECRET>"
+
+dvc pull prepare
+```
+
+On the first `dvc pull` a browser opens. Sign in with **the Google account the
+Drive folder was shared with** -- if you use a different one, you will get
+"This app is blocked", because only listed test users are allowed. You will also
+see an "unverified app" warning: click **Advanced -> Go to DVC dogbreed**. That
+is expected for an app Google has not reviewed.
+
+`--local` writes to `.dvc/config.local`, which is git-ignored. **Never commit
+these credentials** -- this repository is public.
+
+### Everyday use
+
+`dvc pull` to get data, `dvc push` after a pipeline run, and commit the
+resulting `.dvc` / `dvc.lock` files.
+
+Use `dvc pull prepare` rather than a bare `dvc pull` until the `train` stage has
+been run at least once. Bare `dvc pull` tries to check out
+`models/resnet18_best.pt`, which `dvc.yaml` declares but which does not exist
+until someone runs `dvc repro train` and pushes.
+
+### Gotchas
+
+**Windows path length.** DVC's run cache stacks two 64-character hashes, which
+can exceed Windows' 260-character `MAX_PATH` limit and make `dvc repro` fail
+with `[Errno 2]`. Clone into a short path such as `C:\dev\`, not
+`OneDrive\Desktop\...`. Or enable long paths:
+
+```powershell
+New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" `
+  -Name "LongPathsEnabled" -Value 1 -PropertyType DWORD -Force
+git config --global core.longpaths true
+```
+
+**Do not put the repo inside OneDrive or Google Drive.** Sync clients grab
+`.git` files mid-write and corrupt them, and they will try to sync your entire
+`.dvc/cache` -- tens of thousands of files. Keep the working copy on plain local
+disk. The DVC remote is the backup; the working copy does not need syncing.
+
+**Storage.** The Drive folder lives on a 15 GB account. The dataset is ~2.4 GB.
+Keep an eye on headroom before pushing model checkpoints.
+
 ## What never goes in Git
 
 - Any file in data/ (use DVC)
@@ -83,6 +148,7 @@ Use Merge commit for the final dev into main PR (#10).
 - mlruns/ or mlflow.db
 - .env files or any file containing tokens or API keys
 - .dvc/config.local
+- .secrets/ or any service account .json key
 
 If you accidentally commit any of these:
 ```bash
