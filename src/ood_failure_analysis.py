@@ -219,7 +219,7 @@ def compute_threshold_at_tpr(
     target_tpr: float = 0.95,
 ) -> float:
     """Find entropy threshold that catches target_tpr of in-distribution samples."""
-    return float(np.percentile(in_entropy, (1 - target_tpr) * 100))
+    return float(np.percentile(in_entropy, target_tpr * 100))
 
 
 def main():
