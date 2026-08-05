@@ -724,3 +724,44 @@ def test_select_device_returns_torch_device() -> None:
 
     assert isinstance(device, torch.device)
     assert device.type in {"cpu", "cuda", "mps"}
+    
+    
+def test_limited_validation_subset_is_balanced(tmp_path) -> None:
+    dog_train = tmp_path / "dog_train"
+    dog_val = tmp_path / "dog_val"
+    ood_development = tmp_path / "ood_val"
+
+    for index in range(8):
+        create_test_image(
+            dog_train / "breed_a" / f"train_{index}.jpg"
+        )
+
+    for index in range(10):
+        create_test_image(
+            dog_val / "breed_a" / f"val_{index}.jpg"
+        )
+
+    for index in range(10):
+        create_test_image(
+            ood_development / "cats" / f"ood_{index}.jpg"
+        )
+
+    _, validation_loader = build_binary_dataloaders(
+        dog_train_dir=dog_train,
+        dog_val_dir=dog_val,
+        ood_development_dir=ood_development,
+        image_size=32,
+        batch_size=4,
+        num_workers=0,
+        seed=42,
+        ood_validation_fraction=0.5,
+        max_validation_samples=8,
+    )
+
+    labels = [
+        label
+        for _, label in validation_loader.dataset.samples
+    ]
+
+    assert labels.count(0) == 4
+    assert labels.count(1) == 4

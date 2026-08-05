@@ -31,10 +31,14 @@ from torch import nn
 from torch.utils.data import (
     DataLoader,
     Dataset,
-    Subset,
     WeightedRandomSampler,
 )
 from torchvision import transforms
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(message)s",
+)
 
 logger = logging.getLogger(__name__)
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
@@ -296,25 +300,53 @@ def build_binary_dataloaders(
     )
     
     if max_validation_samples is not None:
-        if max_validation_samples <= 0:
+        if max_validation_samples <= 1:
             raise ValueError(
-                "max_validation_samples must be greater than zero"
+                "max_validation_samples must be greater than one"
             )
 
-        max_validation_samples = min(
-            max_validation_samples,
-            len(validation_dataset),
+        dog_limit = min(
+            len(dog_val_files),
+            max_validation_samples // 2,
+        )
+        ood_limit = min(
+            len(ood_val_files),
+            max_validation_samples - dog_limit,
         )
 
-        validation_generator = torch.Generator().manual_seed(seed)
-        validation_indices = torch.randperm(
-            len(validation_dataset),
-            generator=validation_generator,
-        )[:max_validation_samples].tolist()
+        # If OOD has fewer available samples, match the dog count to it.
+        balanced_size = min(dog_limit, ood_limit)
 
-        validation_dataset = Subset(
-            validation_dataset,
-            validation_indices,
+        if balanced_size == 0:
+            raise ValueError(
+                "validation subset must include both dog and OOD samples"
+            )
+
+        generator = torch.Generator().manual_seed(seed)
+
+        dog_indices = torch.randperm(
+            len(dog_val_files),
+            generator=generator,
+        )[:balanced_size].tolist()
+
+        ood_indices = torch.randperm(
+            len(ood_val_files),
+            generator=generator,
+        )[:balanced_size].tolist()
+
+        limited_dog_files = [
+            dog_val_files[index]
+            for index in dog_indices
+        ]
+        limited_ood_files = [
+            ood_val_files[index]
+            for index in ood_indices
+        ]
+
+        validation_dataset = DogOODDataset(
+            dog_files=limited_dog_files,
+            ood_files=limited_ood_files,
+            transform=evaluation_transform,
         )
 
     training_labels = [
@@ -773,38 +805,19 @@ def train_binary_model(
         val_accuracies.append(validation_metrics.accuracy)
 
         logger.info(
-            f"Epoch {epoch:02d}/{epochs} | "
-            f"train_loss={train_metrics.loss:.4f} | "
-            f"train_acc={train_metrics.accuracy:.4f} | "
-            f"val_loss={validation_metrics.loss:.4f} | "
-            f"val_acc={validation_metrics.accuracy:.4f}"
-        )
-        
-        logger.info(
-            "Epoch %d/%d",
+            "Epoch %02d/%d | "
+            "train_loss=%.4f | "
+            "train_acc=%.4f | "
+            "val_loss=%.4f | "
+            "val_acc=%.4f",
             epoch,
             epochs,
-        )
-
-        logger.info(
-            "Train Loss: %.4f | Train Acc: %.2f%%",
             train_metrics.loss,
-            train_metrics.accuracy * 100,
-        )
-
-        logger.info(
-            "Val Loss: %.4f | Val Acc: %.2f%%",
+            train_metrics.accuracy,
             validation_metrics.loss,
-            validation_metrics.accuracy * 100,
+            validation_metrics.accuracy,
         )
-
-        logger.info(
-            "Best Val Acc: %.2f%%",
-            best_val_accuracy * 100,
-        )
-
-        logger.info("-" * 60)
-
+        
         if validation_metrics.accuracy > best_val_accuracy:
             best_val_accuracy = validation_metrics.accuracy
             best_epoch = epoch
