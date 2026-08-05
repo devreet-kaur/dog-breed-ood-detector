@@ -22,8 +22,11 @@ from src.ood_binary import (
     compute_binary_fpr_at_tpr,
     compute_binary_metrics,
     discover_image_files,
+    load_binary_config,
+    plot_training_history,
     save_binary_checkpoint,
     save_binary_metrics,
+    select_device,
     split_files,
     train_binary_model,
     train_one_epoch,
@@ -35,6 +38,7 @@ def create_test_image(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     Image.new("RGB", (32, 32), color=(120, 80, 40)).save(path)
 
+
 class TinyBinaryClassifier(nn.Module):
     """Small classifier for training-loop tests."""
 
@@ -44,6 +48,7 @@ class TinyBinaryClassifier(nn.Module):
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         return self.classifier(inputs)
+
 
 def test_binary_cnn_output_shape() -> None:
     model = BinaryCNN(dropout=0.3)
@@ -209,16 +214,24 @@ def test_balanced_sampler_assigns_higher_weight_to_minority_class() -> None:
     assert weights[4] > weights[0]
 
 
-def test_balanced_sampler_draws_both_classes() -> None:
+def test_balanced_sampler_assigns_equal_total_weight_to_classes() -> None:
     labels = [0] * 20 + [1] * 2
 
     sampler = build_balanced_sampler(labels=labels, seed=42)
+    weights = list(sampler.weights)
 
-    sampled_indices = list(iter(sampler))
-    sampled_labels = [labels[index] for index in sampled_indices]
+    dog_weight = sum(
+        weight
+        for weight, label in zip(weights, labels, strict=True)
+        if label == 0
+    )
+    ood_weight = sum(
+        weight
+        for weight, label in zip(weights, labels, strict=True)
+        if label == 1
+    )
 
-    assert 0 in sampled_labels
-    assert 1 in sampled_labels
+    assert dog_weight == pytest.approx(ood_weight)
 
 
 def test_balanced_sampler_rejects_single_class() -> None:
@@ -596,3 +609,118 @@ def test_save_binary_metrics_writes_json(tmp_path) -> None:
     )
 
     assert saved == metrics
+    
+    
+def test_load_binary_config_reads_required_values(
+    tmp_path,
+) -> None:
+    config_path = tmp_path / "params.yaml"
+
+    config_path.write_text(
+        """
+data:
+  img_size: 224
+  num_workers: 0
+  seed: 42
+
+ood_binary:
+  epochs: 3
+  lr: 0.001
+  batch_size: 8
+  dropout: 0.3
+
+ood_entropy:
+  target_tpr: 0.95
+""".strip(),
+        encoding="utf-8",
+    )
+
+    config = load_binary_config(config_path)
+
+    assert config["data"]["img_size"] == 224
+    assert config["ood_binary"]["epochs"] == 3
+    assert config["ood_entropy"]["target_tpr"] == 0.95
+
+
+def test_load_binary_config_rejects_missing_file(
+    tmp_path,
+) -> None:
+    with pytest.raises(
+        FileNotFoundError,
+        match="not found",
+    ):
+        load_binary_config(tmp_path / "missing.yaml")
+
+
+def test_load_binary_config_rejects_missing_section(
+    tmp_path,
+) -> None:
+    config_path = tmp_path / "params.yaml"
+
+    config_path.write_text(
+        """
+data:
+  img_size: 224
+  num_workers: 0
+  seed: 42
+""".strip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        KeyError,
+        match="required sections",
+    ):
+        load_binary_config(config_path)
+
+
+def test_plot_training_history_creates_file(
+    tmp_path,
+) -> None:
+    history = TrainingHistory(
+        train_loss=[0.9, 0.6, 0.4],
+        train_accuracy=[0.5, 0.7, 0.8],
+        val_loss=[0.8, 0.7, 0.5],
+        val_accuracy=[0.55, 0.65, 0.75],
+        best_epoch=3,
+        best_val_accuracy=0.75,
+    )
+
+    output_path = tmp_path / "plots" / "history.png"
+
+    plot_training_history(
+        history=history,
+        output_path=output_path,
+    )
+
+    assert output_path.exists()
+    assert output_path.stat().st_size > 0
+
+
+def test_plot_training_history_rejects_empty_history(
+    tmp_path,
+) -> None:
+    history = TrainingHistory(
+        train_loss=[],
+        train_accuracy=[],
+        val_loss=[],
+        val_accuracy=[],
+        best_epoch=0,
+        best_val_accuracy=0.0,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="must not be empty",
+    ):
+        plot_training_history(
+            history=history,
+            output_path=tmp_path / "history.png",
+        )
+
+
+def test_select_device_returns_torch_device() -> None:
+    device = select_device()
+
+    assert isinstance(device, torch.device)
+    assert device.type in {"cpu", "cuda", "mps"}

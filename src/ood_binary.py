@@ -2,14 +2,23 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import matplotlib
+
+matplotlib.use("Agg")
+
+import logging
+
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
+import yaml
 from PIL import Image
 from sklearn.metrics import (
     accuracy_score,
@@ -19,10 +28,16 @@ from sklearn.metrics import (
     roc_curve,
 )
 from torch import nn
-from torch.utils.data import DataLoader, Dataset, WeightedRandomSampler
+from torch.utils.data import (
+    DataLoader,
+    Dataset,
+    WeightedRandomSampler,
+)
 from torchvision import transforms
 
+logger = logging.getLogger(__name__)
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+
 
 @dataclass
 class EpochMetrics:
@@ -30,6 +45,7 @@ class EpochMetrics:
 
     loss: float
     accuracy: float
+
 
 class DogOODDataset(Dataset):
     """Binary image dataset for dog-versus-OOD classification.
@@ -75,6 +91,7 @@ class DogOODDataset(Dataset):
             )
 
         return image, label
+
 
 class BinaryCNN(nn.Module):
     """Small CNN for binary dog-versus-OOD classification.
@@ -304,6 +321,7 @@ def build_binary_dataloaders(
 
     return training_loader, validation_loader
 
+
 def train_one_epoch(
     model: nn.Module,
     dataloader: DataLoader,
@@ -344,6 +362,7 @@ def train_one_epoch(
         accuracy=total_correct / total_samples,
     )
 
+
 def build_balanced_sampler(
     labels: list[int],
     seed: int,
@@ -369,9 +388,12 @@ def build_balanced_sampler(
 
     generator = torch.Generator().manual_seed(seed)
 
+    minority_class_size = min(class_counts.values())
+    balanced_epoch_size = 2 * minority_class_size
+
     return WeightedRandomSampler(
         weights=sample_weights,
-        num_samples=len(sample_weights),
+        num_samples=balanced_epoch_size,
         replacement=True,
         generator=generator,
     )
@@ -675,6 +697,7 @@ class TrainingHistory:
     val_accuracy: list[float]
     best_epoch: int
     best_val_accuracy: float
+
     
 def train_binary_model(
     model: nn.Module,
@@ -721,7 +744,7 @@ def train_binary_model(
         val_losses.append(validation_metrics.loss)
         val_accuracies.append(validation_metrics.accuracy)
 
-        print(
+        logger.info(
             f"Epoch {epoch:02d}/{epochs} | "
             f"train_loss={train_metrics.loss:.4f} | "
             f"train_acc={train_metrics.accuracy:.4f} | "
@@ -745,3 +768,393 @@ def train_binary_model(
         best_epoch=best_epoch,
         best_val_accuracy=best_val_accuracy,
     )
+    
+    
+def load_binary_config(
+    config_path: str | Path,
+) -> dict[str, Any]:
+    """Load and validate configuration for the binary OOD strategy."""
+    config_path = Path(config_path)
+
+    if not config_path.exists():
+        raise FileNotFoundError(
+            f"Configuration file not found: {config_path}"
+        )
+
+    with config_path.open("r", encoding="utf-8") as config_file:
+        config = yaml.safe_load(config_file)
+
+    if not isinstance(config, dict):
+        raise TypeError(
+            "Configuration file must contain a YAML mapping"
+        )
+
+    required_sections = {
+        "data",
+        "ood_binary",
+        "ood_entropy",
+    }
+
+    missing_sections = required_sections - set(config)
+
+    if missing_sections:
+        missing = ", ".join(sorted(missing_sections))
+        raise KeyError(
+            f"Configuration is missing required sections: {missing}"
+        )
+
+    required_data_keys = {
+        "img_size",
+        "num_workers",
+        "seed",
+    }
+    required_binary_keys = {
+        "epochs",
+        "lr",
+        "batch_size",
+        "dropout",
+    }
+    required_entropy_keys = {
+        "target_tpr",
+    }
+
+    missing_data = required_data_keys - set(config["data"])
+    missing_binary = required_binary_keys - set(
+        config["ood_binary"]
+    )
+    missing_entropy = required_entropy_keys - set(
+        config["ood_entropy"]
+    )
+
+    if missing_data:
+        missing = ", ".join(sorted(missing_data))
+        raise KeyError(f"data configuration is missing: {missing}")
+
+    if missing_binary:
+        missing = ", ".join(sorted(missing_binary))
+        raise KeyError(
+            f"ood_binary configuration is missing: {missing}"
+        )
+
+    if missing_entropy:
+        missing = ", ".join(sorted(missing_entropy))
+        raise KeyError(
+            f"ood_entropy configuration is missing: {missing}"
+        )
+
+    return config
+
+
+def select_device() -> torch.device:
+    """Select CUDA, Apple MPS, or CPU in that order."""
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+
+    if (
+        hasattr(torch.backends, "mps")
+        and torch.backends.mps.is_available()
+    ):
+        return torch.device("mps")
+
+    return torch.device("cpu")
+
+
+def plot_training_history(
+    history: TrainingHistory,
+    output_path: str | Path,
+) -> None:
+    """Save binary-CNN loss and accuracy training curves."""
+    number_of_epochs = len(history.train_loss)
+
+    if number_of_epochs == 0:
+        raise ValueError("training history must not be empty")
+
+    history_lengths = {
+        len(history.train_loss),
+        len(history.train_accuracy),
+        len(history.val_loss),
+        len(history.val_accuracy),
+    }
+
+    if len(history_lengths) != 1:
+        raise ValueError(
+            "all training-history lists must have equal length"
+        )
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    epochs = list(range(1, number_of_epochs + 1))
+
+    figure, loss_axis = plt.subplots(figsize=(10, 6))
+
+    loss_axis.plot(
+        epochs,
+        history.train_loss,
+        label="Training Loss",
+    )
+    loss_axis.plot(
+        epochs,
+        history.val_loss,
+        label="Validation Loss",
+    )
+    loss_axis.set_xlabel("Epoch")
+    loss_axis.set_ylabel("Loss")
+    loss_axis.grid(
+        linestyle="--",
+        alpha=0.3,
+    )
+
+    accuracy_axis = loss_axis.twinx()
+
+    accuracy_axis.plot(
+        epochs,
+        history.train_accuracy,
+        linestyle="--",
+        label="Training Accuracy",
+    )
+    accuracy_axis.plot(
+        epochs,
+        history.val_accuracy,
+        linestyle="--",
+        label="Validation Accuracy",
+    )
+    accuracy_axis.set_ylabel("Accuracy")
+
+    loss_lines, loss_labels = (
+        loss_axis.get_legend_handles_labels()
+    )
+    accuracy_lines, accuracy_labels = (
+        accuracy_axis.get_legend_handles_labels()
+    )
+
+    loss_axis.legend(
+        loss_lines + accuracy_lines,
+        loss_labels + accuracy_labels,
+        loc="center right",
+    )
+
+    plt.title("Binary OOD CNN Training History")
+    figure.tight_layout()
+
+    figure.savefig(
+        output_path,
+        dpi=300,
+        bbox_inches="tight",
+    )
+
+    plt.close(figure)
+    
+    
+def parse_args() -> argparse.Namespace:
+    """Parse command-line arguments for Strategy B."""
+    parser = argparse.ArgumentParser(
+        description=(
+            "Train and evaluate the binary dog-versus-OOD CNN"
+        )
+    )
+
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=Path("params.yaml"),
+        help="Path to the project YAML configuration.",
+    )
+
+    parser.add_argument(
+        "--dog-train-dir",
+        type=Path,
+        default=Path("data/processed/train"),
+        help="Directory containing dog training images.",
+    )
+
+    parser.add_argument(
+        "--dog-val-dir",
+        type=Path,
+        default=Path("data/processed/val"),
+        help="Directory containing dog validation images.",
+    )
+
+    parser.add_argument(
+        "--ood-development-dir",
+        type=Path,
+        default=Path("data/raw/ood/val"),
+        help=(
+            "OOD development directory used for binary "
+            "training and validation."
+        ),
+    )
+
+    parser.add_argument(
+        "--checkpoint",
+        type=Path,
+        default=Path("models/binary_cnn.pt"),
+        help="Path for the best binary CNN checkpoint.",
+    )
+
+    parser.add_argument(
+        "--metrics-output",
+        type=Path,
+        default=Path(
+            "reports/ood/strategy_b_validation_metrics.json"
+        ),
+        help="Path for binary validation metrics.",
+    )
+
+    parser.add_argument(
+        "--history-plot",
+        type=Path,
+        default=Path(
+            "reports/ood/binary_training_history.png"
+        ),
+        help="Path for binary CNN training curves.",
+    )
+
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help=(
+            "Validate configuration and dataloaders "
+            "without training."
+        ),
+    )
+
+    return parser.parse_args()
+
+
+def run_binary_pipeline(
+    args: argparse.Namespace,
+) -> dict[str, float | int] | None:
+    """Run binary-CNN setup, training, and validation."""
+    config = load_binary_config(args.config)
+
+    data_config = config["data"]
+    binary_config = config["ood_binary"]
+    target_tpr = float(
+        config["ood_entropy"]["target_tpr"]
+    )
+
+    device = select_device()
+
+    logger.info("Binary OOD Detection — Strategy B")
+    logger.info("-" * 50)
+    logger.info(f"Device:          {device}")
+    logger.info(f"Image size:      {data_config['img_size']}")
+    logger.info(f"Batch size:      {binary_config['batch_size']}")
+    logger.info(f"Epochs:          {binary_config['epochs']}")
+    logger.info(f"Learning rate:   {binary_config['lr']}")
+    logger.info(f"Dropout:         {binary_config['dropout']}")
+
+    train_loader, validation_loader = (
+        build_binary_dataloaders(
+            dog_train_dir=args.dog_train_dir,
+            dog_val_dir=args.dog_val_dir,
+            ood_development_dir=args.ood_development_dir,
+            image_size=int(data_config["img_size"]),
+            batch_size=int(binary_config["batch_size"]),
+            num_workers=int(data_config["num_workers"]),
+            seed=int(data_config["seed"]),
+        )
+    )
+
+    logger.info(
+        f"Training samples:   "
+        f"{len(train_loader.dataset):,}"
+    )
+    logger.info(
+        f"Validation samples: "
+        f"{len(validation_loader.dataset):,}"
+    )
+
+    if args.dry_run:
+        logger.info(
+            "Dry run completed successfully. "
+            "No model was trained."
+        )
+        return None
+
+    model = BinaryCNN(
+        dropout=float(binary_config["dropout"])
+    ).to(device)
+
+    optimizer = torch.optim.Adam(
+        model.parameters(),
+        lr=float(binary_config["lr"]),
+    )
+
+    criterion = nn.CrossEntropyLoss()
+
+    history = train_binary_model(
+        model=model,
+        train_loader=train_loader,
+        validation_loader=validation_loader,
+        optimizer=optimizer,
+        criterion=criterion,
+        device=device,
+        epochs=int(binary_config["epochs"]),
+        checkpoint_path=args.checkpoint,
+    )
+
+    plot_training_history(
+        history=history,
+        output_path=args.history_plot,
+    )
+
+    model.load_state_dict(
+        torch.load(
+            args.checkpoint,
+            map_location=device,
+            weights_only=True,
+        )
+    )
+
+    labels, ood_probabilities, predictions = (
+        collect_binary_predictions(
+            model=model,
+            dataloader=validation_loader,
+            device=device,
+        )
+    )
+
+    metrics = compute_binary_metrics(
+        labels=labels,
+        ood_probabilities=ood_probabilities,
+        predictions=predictions,
+        target_tpr=target_tpr,
+    )
+
+    metrics["best_epoch"] = history.best_epoch
+    metrics["best_val_accuracy"] = (
+        history.best_val_accuracy
+    )
+
+    save_binary_metrics(
+        metrics=metrics,
+        output_path=args.metrics_output,
+    )
+
+    logger.info()
+    logger.info("Training complete")
+    logger.info(f"Best epoch:       {history.best_epoch}")
+    logger.info(
+        f"Best validation:  "
+        f"{history.best_val_accuracy:.4f}"
+    )
+    logger.info(f"Validation AUROC: {metrics['auroc']:.4f}")
+    logger.info(f"FPR@95TPR:        {metrics['fpr95']:.4f}")
+    logger.info(f"Checkpoint:       {args.checkpoint}")
+
+    return metrics
+
+
+def main() -> None:
+    """Command-line entry point."""
+    args = parse_args()
+    run_binary_pipeline(args)
+
+
+if __name__ == "__main__":
+    main()
