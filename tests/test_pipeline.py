@@ -11,14 +11,10 @@ Run:
 """
 
 import json
-import os
-import shutil
-import tempfile
 from pathlib import Path
 
 import pytest
 import torch
-import torch.nn as nn
 from PIL import Image
 
 
@@ -102,7 +98,6 @@ def test_train_head_runs_on_synthetic_data(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
 
     # Copy data to expected location under tmp_path
-    import shutil
     (tmp_path / "data" / "processed").mkdir(parents=True, exist_ok=True)
 
     import src.train as train_mod
