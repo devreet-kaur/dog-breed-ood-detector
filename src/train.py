@@ -14,16 +14,17 @@ MLflow tracking URI set via env var: MLFLOW_TRACKING_URI=sqlite:///mlflow.db
 """
 
 import argparse
+import logging
 import os
-import yaml
+
 import mlflow
 import torch
-import torch.nn as nn
-from torch.utils.data import DataLoader, random_split
-from torchvision import datasets, transforms, models
+import yaml
+from torch import nn
+from torch.utils.data import DataLoader
 from torchmetrics import Accuracy
+from torchvision import datasets, models, transforms
 from tqdm import tqdm
-import logging
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
