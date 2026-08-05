@@ -35,6 +35,7 @@ from PIL import Image
 from pydantic import BaseModel
 from torch import nn
 from torchvision import models, transforms
+from torchvision.datasets import ImageFolder
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
@@ -44,7 +45,6 @@ log = logging.getLogger(__name__)
 PARAMS_PATH            = Path("params.yaml")
 BREED_MODEL_PATH       = Path("models/resnet18_best.pt")
 BINARY_MODEL_PATH      = Path("models/binary_cnn.pt")
-CLASS_NAMES_PATH       = Path("data/processed/class_names.json")
 TEMPERATURE_PATH       = Path("models/temperature.json")
 ENTROPY_THRESHOLD_PATH = Path("reports/ood/entropy_threshold.json")
 
@@ -166,10 +166,8 @@ def startup() -> None:
     device  = get_device()
     log.info("Device: %s", device)
 
-    class_names: list[str] = []
-    if CLASS_NAMES_PATH.exists():
-        with open(CLASS_NAMES_PATH) as f:
-            class_names = json.load(f)
+    train_dir = Path("data/processed/train")
+    class_names: list[str] = ImageFolder(str(train_dir)).classes if train_dir.exists() else []
 
     num_classes = len(class_names) or params["data"]["num_classes"]
     img_size    = params["data"]["img_size"]

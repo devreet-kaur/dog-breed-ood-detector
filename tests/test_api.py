@@ -184,3 +184,19 @@ def test_predict_503_when_model_not_loaded(client: TestClient) -> None:
         files={"file": ("dog.jpg", make_fake_image(), "image/jpeg")},
     )
     assert response.status_code == 503
+
+def test_startup_does_not_crash_with_missing_model_files(monkeypatch, tmp_path):
+    """startup() should populate _state gracefully even when model/config files are missing."""
+    from src import app as app_module
+
+    monkeypatch.setattr(app_module, "BREED_MODEL_PATH", tmp_path / "missing.pt")
+    monkeypatch.setattr(app_module, "BINARY_MODEL_PATH", tmp_path / "missing_binary.pt")
+    monkeypatch.setattr(app_module, "TEMPERATURE_PATH", tmp_path / "missing_temp.json")
+    monkeypatch.setattr(app_module, "ENTROPY_THRESHOLD_PATH", tmp_path / "missing_thresh.json")
+
+    app_module.startup()
+
+    assert app_module._state["breed_model"] is None
+    assert app_module._state["binary_model"] is None
+    assert app_module._state["temperature"] == 1.0
+    assert app_module._state["entropy_threshold"] is None
