@@ -1,0 +1,11 @@
+{
+  "head_best_val_top1": 0.7286,
+  "head_best_val_top5": 0.9500,
+  "head_best_val_top1_pct": 72.86,
+  "head_best_val_top5_pct": 95.0,
+  "finetune_best_val_top1": 0.7879,
+  "finetune_best_val_top5": 0.9673,
+  "finetune_best_val_top1_pct": 78.79,
+  "finetune_best_val_top5_pct": 96.73,
+  "early_stopping_epoch": 11
+}

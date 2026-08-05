@@ -1,0 +1,6 @@
+outs:
+- md5: 01e086a070acb62e788d85f900b7a5b4.dir
+  size: 24124520
+  nfiles: 1250
+  hash: md5
+  path: ood
