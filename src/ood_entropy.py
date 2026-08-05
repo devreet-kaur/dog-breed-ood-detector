@@ -17,6 +17,13 @@ import torch
 import torch.nn.functional as F
 import yaml
 from sklearn.metrics import average_precision_score, roc_auc_score, roc_curve
+from torch.utils.data import DataLoader
+from torchvision import datasets
+
+try:
+    from src.evaluate import get_transform, load_model
+except ModuleNotFoundError:
+    from evaluate import get_transform, load_model
 
 
 def compute_entropy(
@@ -493,28 +500,212 @@ def parse_args() -> argparse.Namespace:
         default=Path("reports/ood/entropy_distribution.png"),
         help="Path for the entropy-distribution plot.",
     )
+    
+    parser.add_argument(
+        "--id-validation-dir",
+        type=Path,
+        default=Path("data/processed/val"),
+        help="Directory containing ID validation images.",
+    )
+
+    parser.add_argument(
+        "--id-test-dir",
+        type=Path,
+        default=Path("data/processed/test"),
+        help="Directory containing held-out ID test images.",
+    )
+
+    parser.add_argument(
+        "--ood-test-dir",
+        type=Path,
+        default=Path("data/raw/ood/test"),
+        help="Directory containing held-out OOD test images.",
+    )
+
+    parser.add_argument(
+        "--num-workers",
+        type=int,
+        default=None,
+        help="Override data.num_workers; use 0 on Windows.",
+    )
+
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Validate configuration, model, and datasets without inference.",
+    )
 
     return parser.parse_args()
 
-def main() -> None:
-    """Validate configuration and report pending model integration."""
-    args = parse_args()
-    config = load_config(args.config)
 
-    entropy_config = config["ood_entropy"]
+def build_entropy_dataloaders(
+    id_validation_dir: str | Path,
+    id_test_dir: str | Path,
+    ood_test_dir: str | Path,
+    image_size: int,
+    batch_size: int,
+    num_workers: int,
+) -> tuple[DataLoader, DataLoader, DataLoader]:
+    """Build validation, ID-test, and OOD-test dataloaders."""
+    if batch_size <= 0:
+        raise ValueError("batch_size must be greater than zero")
 
-    print("Entropy-based OOD Detection")
-    print("-" * 40)
-    print(f"Temperature: {entropy_config['temperature']}")
-    print(f"Target TPR:  {entropy_config['target_tpr']}")
-    print(f"Checkpoint:  {args.checkpoint}")
-    print()
-    print(
-        "Configuration validated successfully. "
-        "Real-model inference will be enabled after the trained "
-        "ResNet-18 checkpoint is available."
+    if num_workers < 0:
+        raise ValueError("num_workers must not be negative")
+
+    transform = get_transform(image_size)
+
+    id_validation_dataset = datasets.ImageFolder(
+        str(id_validation_dir),
+        transform=transform,
+    )
+    id_test_dataset = datasets.ImageFolder(
+        str(id_test_dir),
+        transform=transform,
+    )
+    ood_test_dataset = datasets.ImageFolder(
+        str(ood_test_dir),
+        transform=transform,
+    )
+
+    loader_kwargs = {
+        "batch_size": batch_size,
+        "shuffle": False,
+        "num_workers": num_workers,
+        "pin_memory": torch.cuda.is_available(),
+    }
+
+    return (
+        DataLoader(id_validation_dataset, **loader_kwargs),
+        DataLoader(id_test_dataset, **loader_kwargs),
+        DataLoader(ood_test_dataset, **loader_kwargs),
     )
 
 
+def run_entropy_pipeline(
+    args: argparse.Namespace,
+) -> dict[str, float | int] | None:
+    """Run entropy-based OOD detection with the trained ResNet-18."""
+    config = load_config(args.config)
+
+    data_config = config["data"]
+    entropy_config = config["ood_entropy"]
+    head_config = config["train_head"]
+
+    device = torch.device(
+        "cuda" if torch.cuda.is_available() else "cpu"
+    )
+
+    num_workers = (
+        args.num_workers
+        if args.num_workers is not None
+        else int(data_config["num_workers"])
+    )
+
+    validation_loader, id_test_loader, ood_test_loader = (
+        build_entropy_dataloaders(
+            id_validation_dir=args.id_validation_dir,
+            id_test_dir=args.id_test_dir,
+            ood_test_dir=args.ood_test_dir,
+            image_size=int(data_config["img_size"]),
+            batch_size=int(head_config["batch_size"]),
+            num_workers=num_workers,
+        )
+    )
+
+    model = load_model(
+        num_classes=int(data_config["num_classes"]),
+        device=device,
+    )
+
+    print("Entropy-based OOD Detection — Strategy A")
+    print("-" * 50)
+    print(f"Device:                 {device}")
+    print(f"ID validation samples:  {len(validation_loader.dataset):,}")
+    print(f"ID test samples:        {len(id_test_loader.dataset):,}")
+    print(f"OOD test samples:       {len(ood_test_loader.dataset):,}")
+
+    if args.dry_run:
+        print("Dry run completed successfully. No inference was performed.")
+        return None
+
+    temperature = float(entropy_config["temperature"])
+    target_tpr = float(entropy_config["target_tpr"])
+
+    validation_scores = collect_entropy_scores(
+        model=model,
+        dataloader=validation_loader,
+        device=device,
+        temperature=temperature,
+    )
+
+    threshold = calibrate_threshold(
+        id_entropy_scores=validation_scores,
+        target_tpr=target_tpr,
+    )
+
+    id_test_scores = collect_entropy_scores(
+        model=model,
+        dataloader=id_test_loader,
+        device=device,
+        temperature=temperature,
+    )
+
+    ood_test_scores = collect_entropy_scores(
+        model=model,
+        dataloader=ood_test_loader,
+        device=device,
+        temperature=temperature,
+    )
+
+    metrics = compute_ood_metrics(
+        id_scores=id_test_scores,
+        ood_scores=ood_test_scores,
+        target_tpr=target_tpr,
+    )
+
+    metrics["threshold"] = threshold
+    metrics["temperature"] = temperature
+    metrics["num_validation_samples"] = len(
+        validation_loader.dataset
+    )
+
+    save_threshold(
+        threshold=threshold,
+        output_path=args.threshold_output,
+        target_tpr=target_tpr,
+        num_validation_samples=len(validation_loader.dataset),
+    )
+
+    save_metrics(
+        metrics=metrics,
+        output_path=args.metrics_output,
+    )
+
+    plot_entropy_distribution(
+        id_scores=id_test_scores,
+        ood_scores=ood_test_scores,
+        threshold=threshold,
+        output_path=args.plot_output,
+    )
+
+    print()
+    print("Strategy A complete")
+    print(f"Threshold:    {threshold:.4f}")
+    print(f"AUROC:        {metrics['auroc']:.4f}")
+    print(f"AUPR-IN:      {metrics['aupr_in']:.4f}")
+    print(f"AUPR-OUT:     {metrics['aupr_out']:.4f}")
+    print(f"FPR@95TPR:    {metrics['fpr95']:.4f}")
+
+    return metrics
+
+
+def main() -> None:
+    """Command-line entry point."""
+    args = parse_args()
+    run_entropy_pipeline(args)
+
+
 if __name__ == "__main__":
+    torch.multiprocessing.freeze_support()
     main()
