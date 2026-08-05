@@ -1,0 +1,6 @@
+outs:
+- md5: 69f1cf1133694586aa3f1071982e4eaa.dir
+  size: 216500
+  nfiles: 4
+  hash: md5
+  path: ood_analysis

@@ -164,8 +164,8 @@ def main():
     )
     print(f"Device: {device}")
 
-    with open(args.labels) as f:
-        class_names = json.load(f)
+    from torchvision.datasets import ImageFolder
+    class_names = ImageFolder("data/processed/train").classes
 
     num_classes = len(class_names)
     model       = load_model(args.model, num_classes, device)

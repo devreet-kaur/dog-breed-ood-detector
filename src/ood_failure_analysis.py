@@ -243,8 +243,8 @@ def main():
     with open("data/processed/class_names.json") as f:
         class_names = json.load(f)
 
-    img_size   = params.get("img_size", 224)
-    batch_size = params.get("batch_size", 64)
+    img_size   = params["data"]["img_size"]
+    batch_size = params["train_head"]["batch_size"]
     transform  = T.Compose([
         T.Resize((img_size, img_size)),
         T.ToTensor(),
