@@ -106,17 +106,41 @@ stages:
       - reports/ood/binary_training_history.png:
           cache: false
   
+  ood_binary_evaluate:
+    cmd: python src/ood_binary.py --evaluate-only --num-workers 0
+    deps:
+      - src/ood_binary.py
+      - models/binary_cnn.pt
+      - data/processed/test
+      - data/raw/ood/test
+    params:
+      - params.yaml:
+          - data
+          - ood_binary
+          - ood_entropy
+    metrics:
+      - reports/ood/strategy_b_test_metrics.json:
+          cache: false
+    outs:
+      - reports/ood/strategy_b_test_scores.npz:
+          cache: false
+
+
   ood_compare:
     cmd: python src/ood_compare.py
     deps:
       - src/ood_compare.py
       - reports/ood/strategy_a_metrics.json
       - reports/ood/strategy_b_test_metrics.json
+      - reports/ood/strategy_a_test_scores.npz
+      - reports/ood/strategy_b_test_scores.npz
     metrics:
       - reports/ood/strategy_comparison.json:
           cache: false
     plots:
       - reports/ood/strategy_comparison.png:
+          cache: false
+      - reports/ood/reliability_comparison.png:
           cache: false
     outs:
       - reports/ood/strategy_comparison.csv:

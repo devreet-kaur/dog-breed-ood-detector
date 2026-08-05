@@ -192,8 +192,8 @@ stages:
       nfiles: 250
     - path: src/ood_binary.py
       hash: md5
-      md5: 48513c1c0ffc9e44fd900d8bc0e3e7d0
-      size: 33779
+      md5: 03dde331707bb12ad35898c443cec69e
+      size: 39031
     params:
       params.yaml:
         data:
@@ -240,27 +240,39 @@ stages:
       hash: md5
       md5: 84b092a2d4600c06d327ef222602749d
       size: 309
+    - path: reports/ood/strategy_a_test_scores.npz
+      hash: md5
+      md5: 43b951276a4cc8a175800fb03377cfdb
+      size: 15305
     - path: reports/ood/strategy_b_test_metrics.json
       hash: md5
       md5: 06502ef3c513422552a1e6ce6cf39d4c
       size: 369
+    - path: reports/ood/strategy_b_test_scores.npz
+      hash: md5
+      md5: 77469faee46da1fa3ed559d5fdf49b9f
+      size: 15307
     - path: src/ood_compare.py
       hash: md5
-      md5: fa2b304d5d426d776237eb19c77ed2a1
-      size: 11441
+      md5: 16f2145a034a8974f98fcf41c37abdb8
+      size: 18560
     outs:
     - path: reports/ood/comparison_summary.txt
       hash: md5
       md5: 2cc816b8a05109bb5f3d18fc9de1980d
       size: 484
+    - path: reports/ood/reliability_comparison.png
+      hash: md5
+      md5: 2f2becb906c18d3e31352db21592d80e
+      size: 228740
     - path: reports/ood/strategy_comparison.csv
       hash: md5
       md5: 89f2c6ad2bb1717be07ce9610392dce4
       size: 279
     - path: reports/ood/strategy_comparison.json
       hash: md5
-      md5: 22b18af2f46ea66b5d417bbf65e3f721
-      size: 925
+      md5: f44efc502c16757f6be462010843eb6a
+      size: 1038
     - path: reports/ood/strategy_comparison.png
       hash: md5
       md5: 15f9f701e8bc1b0b8adf18c4ed144052
@@ -293,8 +305,8 @@ stages:
       size: 8946
     - path: src/ood_entropy.py
       hash: md5
-      md5: a8b6c7cce0369b9bf51f6251439fb237
-      size: 20725
+      md5: 1eb5d7e08269fbfd050ec70ebff6cf31
+      size: 22416
     params:
       params.yaml:
         data:
@@ -334,3 +346,59 @@ stages:
       hash: md5
       md5: 84b092a2d4600c06d327ef222602749d
       size: 309
+  ood_binary_evaluate:
+    cmd: python src/ood_binary.py --evaluate-only --num-workers 0
+    deps:
+    - path: data/processed/test
+      hash: md5
+      md5: 89c8317adbe24d4c86f6144a379910d0.dir
+      size: 69864988
+      nfiles: 3099
+    - path: data/raw/ood/test
+      hash: md5
+      md5: fb73226c2cd549de5504346e8a31c8be.dir
+      size: 19275299
+      nfiles: 1000
+    - path: models/binary_cnn.pt
+      hash: md5
+      md5: 41587bca7b8286aac8ed0633c8495918
+      size: 2485493
+    - path: src/ood_binary.py
+      hash: md5
+      md5: 03dde331707bb12ad35898c443cec69e
+      size: 39031
+    params:
+      params.yaml:
+        data:
+          img_size: 224
+          val_split: 0.15
+          test_split: 0.15
+          num_workers: 4
+          use_bbox_crop: true
+          num_classes: 120
+          raw_dir: data/raw/stanford_dogs
+          out_dir: data/processed
+          sources:
+            images: http://vision.stanford.edu/aditya86/ImageNetDogs/images.tar
+            annotations: 
+              http://vision.stanford.edu/aditya86/ImageNetDogs/annotation.tar
+          bbox_margin: 0.0
+          jpeg_quality: 95
+          seed: 42
+        ood_binary:
+          epochs: 15
+          lr: 0.001
+          batch_size: 32
+          dropout: 0.3
+        ood_entropy:
+          temperature: 1.0
+          target_tpr: 0.95
+    outs:
+    - path: reports/ood/strategy_b_test_metrics.json
+      hash: md5
+      md5: 06502ef3c513422552a1e6ce6cf39d4c
+      size: 369
+    - path: reports/ood/strategy_b_test_scores.npz
+      hash: md5
+      md5: 77469faee46da1fa3ed559d5fdf49b9f
+      size: 15307
