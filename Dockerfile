@@ -13,7 +13,9 @@
 
 FROM python:3.11-slim
 
-# System dependencies for OpenCV and image processing
+# System dependencies -- libgomp1 required for PyTorch CPU wheels
+RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
