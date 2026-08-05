@@ -1,7 +1,9 @@
 """Tests for the binary OOD CNN."""
 
+import json
 from pathlib import Path
 
+import numpy as np
 import pytest
 import torch
 from PIL import Image
@@ -16,8 +18,12 @@ from src.ood_binary import (
     build_balanced_sampler,
     build_binary_dataloaders,
     build_binary_transforms,
+    collect_binary_predictions,
+    compute_binary_fpr_at_tpr,
+    compute_binary_metrics,
     discover_image_files,
     save_binary_checkpoint,
+    save_binary_metrics,
     split_files,
     train_binary_model,
     train_one_epoch,
@@ -438,3 +444,155 @@ def test_train_binary_model_rejects_invalid_epochs(
             epochs=epochs,
             checkpoint_path=tmp_path / "binary_cnn.pt",
         )
+        
+        
+def test_collect_binary_predictions_returns_expected_shapes() -> None:
+    features = torch.randn(6, 4)
+    labels = torch.tensor([0, 1, 0, 1, 0, 1])
+
+    dataloader = DataLoader(
+        TensorDataset(features, labels),
+        batch_size=2,
+        shuffle=False,
+    )
+
+    model = TinyBinaryClassifier()
+
+    collected_labels, probabilities, predictions = (
+        collect_binary_predictions(
+            model=model,
+            dataloader=dataloader,
+            device=torch.device("cpu"),
+        )
+    )
+
+    assert collected_labels.shape == (6,)
+    assert probabilities.shape == (6,)
+    assert predictions.shape == (6,)
+    assert torch.all(
+        (probabilities >= 0.0)
+        & (probabilities <= 1.0)
+    )
+
+
+def test_collect_binary_predictions_matches_argmax() -> None:
+    features = torch.randn(4, 4)
+    labels = torch.tensor([0, 1, 0, 1])
+
+    model = TinyBinaryClassifier()
+    dataloader = DataLoader(
+        TensorDataset(features, labels),
+        batch_size=4,
+    )
+
+    _, probabilities, predictions = (
+        collect_binary_predictions(
+            model=model,
+            dataloader=dataloader,
+            device=torch.device("cpu"),
+        )
+    )
+
+    expected_logits = model(features)
+    expected_probabilities = torch.softmax(
+        expected_logits,
+        dim=1,
+    )[:, 1]
+    expected_predictions = expected_logits.argmax(dim=1)
+
+    assert torch.allclose(
+        probabilities,
+        expected_probabilities,
+    )
+    assert torch.equal(
+        predictions,
+        expected_predictions,
+    )
+
+
+def test_perfect_binary_predictions_have_perfect_metrics() -> None:
+    labels = torch.tensor([0, 0, 1, 1])
+    probabilities = torch.tensor([0.1, 0.2, 0.8, 0.9])
+    predictions = torch.tensor([0, 0, 1, 1])
+
+    metrics = compute_binary_metrics(
+        labels=labels,
+        ood_probabilities=probabilities,
+        predictions=predictions,
+    )
+
+    assert metrics["accuracy"] == pytest.approx(1.0)
+    assert metrics["precision_ood"] == pytest.approx(1.0)
+    assert metrics["recall_ood"] == pytest.approx(1.0)
+    assert metrics["f1_ood"] == pytest.approx(1.0)
+    assert metrics["auroc"] == pytest.approx(1.0)
+    assert metrics["aupr_in"] == pytest.approx(1.0)
+    assert metrics["aupr_out"] == pytest.approx(1.0)
+    assert metrics["fpr95"] == pytest.approx(0.0)
+
+
+def test_binary_metrics_count_classes() -> None:
+    metrics = compute_binary_metrics(
+        labels=torch.tensor([0, 0, 0, 1, 1]),
+        ood_probabilities=torch.tensor(
+            [0.1, 0.2, 0.3, 0.8, 0.9]
+        ),
+        predictions=torch.tensor([0, 0, 0, 1, 1]),
+    )
+
+    assert metrics["num_samples"] == 5
+    assert metrics["num_dog_samples"] == 3
+    assert metrics["num_ood_samples"] == 2
+
+
+def test_compute_binary_fpr_for_perfect_separation() -> None:
+    labels = np.array([0, 0, 0, 1, 1, 1])
+    probabilities = np.array(
+        [0.1, 0.2, 0.3, 0.8, 0.9, 1.0]
+    )
+
+    result = compute_binary_fpr_at_tpr(
+        labels=labels,
+        ood_probabilities=probabilities,
+        target_tpr=0.95,
+    )
+
+    assert result == pytest.approx(0.0)
+
+
+def test_binary_metrics_reject_mismatched_lengths() -> None:
+    with pytest.raises(ValueError, match="equal length"):
+        compute_binary_metrics(
+            labels=torch.tensor([0, 1]),
+            ood_probabilities=torch.tensor([0.2]),
+            predictions=torch.tensor([0, 1]),
+        )
+
+
+def test_binary_metrics_reject_invalid_probabilities() -> None:
+    with pytest.raises(
+        ValueError,
+        match="between 0 and 1",
+    ):
+        compute_binary_metrics(
+            labels=torch.tensor([0, 1]),
+            ood_probabilities=torch.tensor([0.2, 1.2]),
+            predictions=torch.tensor([0, 1]),
+        )
+
+
+def test_save_binary_metrics_writes_json(tmp_path) -> None:
+    output_path = tmp_path / "reports" / "metrics.json"
+    metrics = {
+        "accuracy": 0.9,
+        "auroc": 0.95,
+        "fpr95": 0.15,
+    }
+
+    save_binary_metrics(metrics, output_path)
+
+    saved = json.loads(
+        output_path.read_text(encoding="utf-8")
+    )
+
+    assert saved == metrics

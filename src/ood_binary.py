@@ -2,12 +2,22 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+import json
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
+import numpy as np
 import torch
 from PIL import Image
+from sklearn.metrics import (
+    accuracy_score,
+    average_precision_score,
+    precision_recall_fscore_support,
+    roc_auc_score,
+    roc_curve,
+)
 from torch import nn
 from torch.utils.data import DataLoader, Dataset, WeightedRandomSampler
 from torchvision import transforms
@@ -402,6 +412,247 @@ def validate_one_epoch(
         accuracy=total_correct / total_samples,
     )
     
+
+@torch.inference_mode()
+def collect_binary_predictions(
+    model: nn.Module,
+    dataloader: Iterable,
+    device: torch.device,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Collect labels, OOD probabilities, and predicted classes.
+
+    Class 1 represents OOD, so the returned probability tensor contains
+    softmax probabilities for class 1.
+
+    Args:
+        model: Binary classification model returning two logits per sample.
+        dataloader: Iterable yielding ``(images, labels)`` batches.
+        device: Device used for inference.
+
+    Returns:
+        Tuple containing:
+        - ground-truth labels
+        - OOD probabilities
+        - predicted class labels
+
+        All returned tensors are one-dimensional CPU tensors.
+    """
+    model = model.to(device)
+    model.eval()
+
+    collected_labels: list[torch.Tensor] = []
+    collected_probabilities: list[torch.Tensor] = []
+    collected_predictions: list[torch.Tensor] = []
+
+    for batch in dataloader:
+        if not isinstance(batch, (tuple, list)) or len(batch) < 2:
+            raise TypeError(
+                "dataloader must return image-label pairs"
+            )
+
+        images, labels = batch[0], batch[1]
+
+        if not torch.is_tensor(images) or not torch.is_tensor(labels):
+            raise TypeError("images and labels must be torch tensors")
+
+        images = images.to(device)
+        labels = labels.to(device)
+
+        logits = model(images)
+
+        if not torch.is_tensor(logits):
+            raise TypeError("model output must be a torch tensor")
+
+        if logits.ndim != 2 or logits.shape[1] != 2:
+            raise ValueError(
+                "binary model logits must have shape "
+                "(batch_size, 2)"
+            )
+
+        probabilities = torch.softmax(logits, dim=1)
+        ood_probabilities = probabilities[:, 1]
+        predictions = logits.argmax(dim=1)
+
+        collected_labels.append(labels.detach().cpu())
+        collected_probabilities.append(
+            ood_probabilities.detach().cpu()
+        )
+        collected_predictions.append(predictions.detach().cpu())
+
+    if not collected_labels:
+        raise ValueError("dataloader did not provide any samples")
+
+    return (
+        torch.cat(collected_labels),
+        torch.cat(collected_probabilities),
+        torch.cat(collected_predictions),
+    )
+
+ 
+def compute_binary_fpr_at_tpr(
+    labels: np.ndarray,
+    ood_probabilities: np.ndarray,
+    target_tpr: float = 0.95,
+) -> float:
+    """Compute ID false-positive rate at the requested OOD TPR."""
+    if not 0.0 < target_tpr < 1.0:
+        raise ValueError("target_tpr must be between 0 and 1")
+
+    false_positive_rates, true_positive_rates, _ = roc_curve(
+        labels,
+        ood_probabilities,
+        pos_label=1,
+    )
+
+    eligible = np.flatnonzero(
+        true_positive_rates >= target_tpr
+    )
+
+    if eligible.size == 0:
+        return 1.0
+
+    return float(false_positive_rates[eligible[0]])
+ 
+
+def compute_binary_metrics(
+    labels: torch.Tensor,
+    ood_probabilities: torch.Tensor,
+    predictions: torch.Tensor,
+    target_tpr: float = 0.95,
+) -> dict[str, float | int]:
+    """Compute binary dog-versus-OOD evaluation metrics."""
+    tensors = {
+        "labels": labels,
+        "ood_probabilities": ood_probabilities,
+        "predictions": predictions,
+    }
+
+    for name, values in tensors.items():
+        if not torch.is_tensor(values):
+            raise TypeError(f"{name} must be a torch.Tensor")
+
+        if values.ndim != 1:
+            raise ValueError(f"{name} must be one-dimensional")
+
+        if values.numel() == 0:
+            raise ValueError(f"{name} must not be empty")
+
+        if not torch.isfinite(values.float()).all():
+            raise ValueError(
+                f"{name} must contain only finite values"
+            )
+
+    if not (
+        labels.numel()
+        == ood_probabilities.numel()
+        == predictions.numel()
+    ):
+        raise ValueError(
+            "labels, probabilities, and predictions "
+            "must have equal length"
+        )
+
+    labels_array = labels.detach().cpu().numpy().astype(
+        np.int64
+    )
+    probabilities_array = (
+        ood_probabilities.detach()
+        .cpu()
+        .numpy()
+        .astype(np.float64)
+    )
+    predictions_array = (
+        predictions.detach()
+        .cpu()
+        .numpy()
+        .astype(np.int64)
+    )
+
+    if set(np.unique(labels_array)) != {0, 1}:
+        raise ValueError(
+            "labels must contain both binary classes 0 and 1"
+        )
+
+    if np.any(
+        (probabilities_array < 0.0)
+        | (probabilities_array > 1.0)
+    ):
+        raise ValueError(
+            "ood_probabilities must be between 0 and 1"
+        )
+
+    accuracy = accuracy_score(
+        labels_array,
+        predictions_array,
+    )
+
+    precision, recall, f1, _ = (
+        precision_recall_fscore_support(
+            labels_array,
+            predictions_array,
+            average="binary",
+            pos_label=1,
+            zero_division=0,
+        )
+    )
+
+    auroc = roc_auc_score(
+        labels_array,
+        probabilities_array,
+    )
+
+    aupr_out = average_precision_score(
+        labels_array,
+        probabilities_array,
+    )
+
+    aupr_in = average_precision_score(
+        1 - labels_array,
+        1.0 - probabilities_array,
+    )
+
+    fpr95 = compute_binary_fpr_at_tpr(
+        labels=labels_array,
+        ood_probabilities=probabilities_array,
+        target_tpr=target_tpr,
+    )
+
+    return {
+        "accuracy": float(accuracy),
+        "precision_ood": float(precision),
+        "recall_ood": float(recall),
+        "f1_ood": float(f1),
+        "auroc": float(auroc),
+        "aupr_in": float(aupr_in),
+        "aupr_out": float(aupr_out),
+        "fpr95": float(fpr95),
+        "target_tpr": float(target_tpr),
+        "num_samples": int(labels_array.shape[0]),
+        "num_dog_samples": int(
+            np.sum(labels_array == 0)
+        ),
+        "num_ood_samples": int(
+            np.sum(labels_array == 1)
+        ),
+    }
+
+
+def save_binary_metrics(
+    metrics: dict[str, Any],
+    output_path: str | Path,
+) -> None:
+    """Save binary OOD metrics as JSON."""
+    output_path = Path(output_path)
+    output_path.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    output_path.write_text(
+        json.dumps(metrics, indent=2),
+        encoding="utf-8",
+    )
+
     
 def save_binary_checkpoint(
     model: nn.Module,
