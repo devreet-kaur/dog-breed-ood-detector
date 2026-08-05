@@ -346,6 +346,10 @@ stages:
       hash: md5
       md5: 84b092a2d4600c06d327ef222602749d
       size: 309
+    - path: reports/ood/strategy_a_test_scores.npz
+      hash: md5
+      md5: 43b951276a4cc8a175800fb03377cfdb
+      size: 15305
   ood_binary_evaluate:
     cmd: python src/ood_binary.py --evaluate-only --num-workers 0
     deps:

@@ -81,6 +81,8 @@ stages:
     outs:
       - reports/ood/entropy_threshold.json:
           cache: false
+      - reports/ood/strategy_a_test_scores.npz:
+          cache: false
     plots:
       - reports/ood/entropy_distribution.png:
           cache: false
