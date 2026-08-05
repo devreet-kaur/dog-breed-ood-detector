@@ -31,6 +31,7 @@ from torch import nn
 from torch.utils.data import (
     DataLoader,
     Dataset,
+    Subset,
     WeightedRandomSampler,
 )
 from torchvision import transforms
@@ -259,6 +260,7 @@ def build_binary_dataloaders(
     num_workers: int,
     seed: int,
     ood_validation_fraction: float = 0.2,
+    max_validation_samples: int | None = None,
 ) -> tuple[DataLoader, DataLoader]:
     """Build binary training and validation dataloaders."""
     if batch_size <= 0:
@@ -292,6 +294,28 @@ def build_binary_dataloaders(
         ood_files=ood_val_files,
         transform=evaluation_transform,
     )
+    
+    if max_validation_samples is not None:
+        if max_validation_samples <= 0:
+            raise ValueError(
+                "max_validation_samples must be greater than zero"
+            )
+
+        max_validation_samples = min(
+            max_validation_samples,
+            len(validation_dataset),
+        )
+
+        validation_generator = torch.Generator().manual_seed(seed)
+        validation_indices = torch.randperm(
+            len(validation_dataset),
+            generator=validation_generator,
+        )[:max_validation_samples].tolist()
+
+        validation_dataset = Subset(
+            validation_dataset,
+            validation_indices,
+        )
 
     training_labels = [
         label
@@ -413,7 +437,10 @@ def validate_one_epoch(
     total_correct = 0
     total_samples = 0
 
-    for images, labels in dataloader:
+    for batch_index, (images, labels) in enumerate(
+        dataloader,
+        start=1,
+    ):
         images = images.to(device)
         labels = labels.to(device)
 
@@ -425,7 +452,8 @@ def validate_one_epoch(
         total_loss += loss.item() * batch_size
         total_correct += (logits.argmax(dim=1) == labels).sum().item()
         total_samples += batch_size
-
+        
+        
     if total_samples == 0:
         raise ValueError("validation dataloader did not provide any samples")
 
@@ -751,6 +779,31 @@ def train_binary_model(
             f"val_loss={validation_metrics.loss:.4f} | "
             f"val_acc={validation_metrics.accuracy:.4f}"
         )
+        
+        logger.info(
+            "Epoch %d/%d",
+            epoch,
+            epochs,
+        )
+
+        logger.info(
+            "Train Loss: %.4f | Train Acc: %.2f%%",
+            train_metrics.loss,
+            train_metrics.accuracy * 100,
+        )
+
+        logger.info(
+            "Val Loss: %.4f | Val Acc: %.2f%%",
+            validation_metrics.loss,
+            validation_metrics.accuracy * 100,
+        )
+
+        logger.info(
+            "Best Val Acc: %.2f%%",
+            best_val_accuracy * 100,
+        )
+
+        logger.info("-" * 60)
 
         if validation_metrics.accuracy > best_val_accuracy:
             best_val_accuracy = validation_metrics.accuracy
@@ -956,6 +1009,15 @@ def parse_args() -> argparse.Namespace:
             "Train and evaluate the binary dog-versus-OOD CNN"
         )
     )
+    
+    parser.add_argument(
+        "--max-validation-samples",
+        type=int,
+        default=None,
+        help=(
+            "Optionally limit validation samples for faster CPU testing."
+        ),
+    )
 
     parser.add_argument(
         "--config",
@@ -1021,6 +1083,16 @@ def parse_args() -> argparse.Namespace:
             "without training."
         ),
     )
+    
+    parser.add_argument(
+        "--num-workers",
+        type=int,
+        default=None,
+        help=(
+            "Override data.num_workers from params.yaml. "
+            "Use 0 on Windows if multiprocessing causes issues."
+        ),
+    )
 
     return parser.parse_args()
 
@@ -1048,6 +1120,12 @@ def run_binary_pipeline(
     logger.info(f"Learning rate:   {binary_config['lr']}")
     logger.info(f"Dropout:         {binary_config['dropout']}")
 
+    num_workers = (
+        args.num_workers
+        if args.num_workers is not None
+        else int(data_config["num_workers"])
+    )
+    
     train_loader, validation_loader = (
         build_binary_dataloaders(
             dog_train_dir=args.dog_train_dir,
@@ -1055,8 +1133,9 @@ def run_binary_pipeline(
             ood_development_dir=args.ood_development_dir,
             image_size=int(data_config["img_size"]),
             batch_size=int(binary_config["batch_size"]),
-            num_workers=int(data_config["num_workers"]),
+            num_workers=num_workers,
             seed=int(data_config["seed"]),
+            max_validation_samples=args.max_validation_samples,
         )
     )
 
@@ -1136,7 +1215,7 @@ def run_binary_pipeline(
         output_path=args.metrics_output,
     )
 
-    logger.info()
+    logger.info("")
     logger.info("Training complete")
     logger.info(f"Best epoch:       {history.best_epoch}")
     logger.info(
@@ -1157,4 +1236,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    torch.multiprocessing.freeze_support()
     main()
