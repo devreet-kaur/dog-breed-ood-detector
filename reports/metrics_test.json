@@ -1,0 +1,8 @@
+{
+  "top1_acc": 0.762181,
+  "top5_acc": 0.9687,
+  "top1_pct": 76.22,
+  "top5_pct": 96.87,
+  "num_test_images": 3099,
+  "num_classes": 120
+}
