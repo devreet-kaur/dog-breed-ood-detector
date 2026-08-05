@@ -1,4 +1,4 @@
 [core]
     remote = gdrive_remote
 ['remote "gdrive_remote"']
-    url = G:/My Drive/dog-breed-ood-dvc
+    url = gdrive://1NRs6YO-0d6oZFRWHmMGzCsd9xWJg3QEE

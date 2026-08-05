@@ -8,6 +8,21 @@ data:
   use_bbox_crop: true
   num_classes: 120
 
+  # ── Added in PR #5 for src/prepare.py ──────────────────────────────────────
+  # train_split is not listed on purpose: it is 1 - val_split - test_split, so
+  # the three can never drift out of sync.
+  raw_dir: data/raw/stanford_dogs
+  out_dir: data/processed
+  # Source tarballs. A dead link is then a one-line params fix, and DVC treats
+  # it as a parameter change like everything else here.
+  sources:
+    images: http://vision.stanford.edu/aditya86/ImageNetDogs/images.tar
+    annotations: http://vision.stanford.edu/aditya86/ImageNetDogs/annotation.tar
+  # Fraction of the box's own size added on each side. 0.0 = tight crop.
+  bbox_margin: 0.0
+  jpeg_quality: 95
+  seed: 42
+
 train_head:
   epochs: 5
   lr: 1.0e-3

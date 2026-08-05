@@ -1,0 +1,174 @@
+schema: '2.0'
+stages:
+  prepare:
+    cmd: python src/prepare.py
+    deps:
+    - path: data/raw/stanford_dogs/Annotation
+      hash: md5
+      md5: 2211795d6bcd4abec35de6ff8311c494.dir
+      size: 10346259
+      nfiles: 20580
+    - path: data/raw/stanford_dogs/Images
+      hash: md5
+      md5: 8bdba35a1f267af17ab5834acb345154.dir
+      size: 777706781
+      nfiles: 20580
+    - path: src/prepare.py
+      hash: md5
+      md5: 768475ce00945d92b7c810659d3e4c71
+      size: 16126
+    params:
+      params.yaml:
+        data:
+          img_size: 224
+          val_split: 0.15
+          test_split: 0.15
+          num_workers: 4
+          use_bbox_crop: true
+          num_classes: 120
+          raw_dir: data/raw/stanford_dogs
+          out_dir: data/processed
+          sources:
+            images: http://vision.stanford.edu/aditya86/ImageNetDogs/images.tar
+            annotations: 
+              http://vision.stanford.edu/aditya86/ImageNetDogs/annotation.tar
+          bbox_margin: 0.0
+          jpeg_quality: 95
+          seed: 42
+    outs:
+    - path: data/processed/test
+      hash: md5
+      md5: 89c8317adbe24d4c86f6144a379910d0.dir
+      size: 69864988
+      nfiles: 3099
+    - path: data/processed/train
+      hash: md5
+      md5: 516ac2c8d0a1ae64c98eab7c5074e0cd.dir
+      size: 325845956
+      nfiles: 14397
+    - path: data/processed/val
+      hash: md5
+      md5: f3e5d0af3f4426469a0d540f3ba61b42.dir
+      size: 70013566
+      nfiles: 3084
+    - path: reports/split_summary.json
+      hash: md5
+      md5: 73383708c398302343c34fc681132f1e
+      size: 10426
+  train:
+    cmd: python src/train.py --stage head && python src/train.py --stage 
+      finetune
+    deps:
+    - path: data/processed/train/
+      hash: md5
+      md5: 516ac2c8d0a1ae64c98eab7c5074e0cd.dir
+      size: 325845956
+      nfiles: 14397
+    - path: params.yaml
+      hash: md5
+      md5: 6880bd64c3f31b2bc71f71ebd913dc14
+      size: 1446
+    - path: src/train.py
+      hash: md5
+      md5: 9d402d98c6e66032e1df55424bb7a05a
+      size: 13932
+    params:
+      params.yaml:
+        data:
+          img_size: 224
+          val_split: 0.15
+          test_split: 0.15
+          num_workers: 4
+          use_bbox_crop: true
+          num_classes: 120
+          raw_dir: data/raw/stanford_dogs
+          out_dir: data/processed
+          sources:
+            images: http://vision.stanford.edu/aditya86/ImageNetDogs/images.tar
+            annotations: 
+              http://vision.stanford.edu/aditya86/ImageNetDogs/annotation.tar
+          bbox_margin: 0.0
+          jpeg_quality: 95
+          seed: 42
+        train_finetune:
+          epochs: 30
+          lr_initial: 0.0001
+          lr_min: 1e-06
+          batch_size: 32
+          weight_decay: 0.0001
+          label_smoothing: 0.1
+          early_stopping_patience: 7
+        train_head:
+          epochs: 5
+          lr: 0.001
+          batch_size: 32
+          dropout: 0.4
+    outs:
+    - path: models/resnet18_best.pt
+      hash: md5
+      md5: cbb4c44ae8176a8c226bd84376735ddd
+      size: 45030603
+    - path: reports/metrics_train.json
+      hash: md5
+      md5: fb6b204ff897f8b205a336694b5d3c26
+      size: 316
+  evaluate:
+    cmd: python src/evaluate.py
+    deps:
+    - path: data/processed/train/
+      hash: md5
+      md5: 516ac2c8d0a1ae64c98eab7c5074e0cd.dir
+      size: 325845956
+      nfiles: 14397
+    - path: models/resnet18_best.pt
+      hash: md5
+      md5: cbb4c44ae8176a8c226bd84376735ddd
+      size: 45030603
+    - path: params.yaml
+      hash: md5
+      md5: 6880bd64c3f31b2bc71f71ebd913dc14
+      size: 1446
+    - path: src/evaluate.py
+      hash: md5
+      md5: 191425f200b793d3dc7c68a872f63831
+      size: 8681
+    params:
+      params.yaml:
+        data:
+          img_size: 224
+          val_split: 0.15
+          test_split: 0.15
+          num_workers: 4
+          use_bbox_crop: true
+          num_classes: 120
+          raw_dir: data/raw/stanford_dogs
+          out_dir: data/processed
+          sources:
+            images: http://vision.stanford.edu/aditya86/ImageNetDogs/images.tar
+            annotations: 
+              http://vision.stanford.edu/aditya86/ImageNetDogs/annotation.tar
+          bbox_margin: 0.0
+          jpeg_quality: 95
+          seed: 42
+        train_finetune:
+          epochs: 30
+          lr_initial: 0.0001
+          lr_min: 1e-06
+          batch_size: 32
+          weight_decay: 0.0001
+          label_smoothing: 0.1
+          early_stopping_patience: 7
+        train_head:
+          epochs: 5
+          lr: 0.001
+          batch_size: 32
+          dropout: 0.4
+    outs:
+    - path: reports/metrics_test.json
+      hash: md5
+      md5: 17271c1dbe7c03d39162e93c5309b41c
+      size: 139
+    - path: reports/plots/confusion_matrix.png
+      hash: md5
+      md5: 38ad1c0acd91eb774fbf7a07854416ef
+      size: 319040

@@ -1,0 +1,621 @@
+{
+  "bbox_margin": 0.0,
+  "counts": {
+    "test": 3099,
+    "train": 14397,
+    "val": 3084
+  },
+  "images_without_bbox": 0,
+  "img_size": 224,
+  "n_breeds": 120,
+  "n_images": 20580,
+  "per_breed": {
+    "Afghan_hound": {
+      "test": 36,
+      "train": 167,
+      "val": 36
+    },
+    "African_hunting_dog": {
+      "test": 26,
+      "train": 118,
+      "val": 25
+    },
+    "Airedale": {
+      "test": 31,
+      "train": 141,
+      "val": 30
+    },
+    "American_Staffordshire_terrier": {
+      "test": 24,
+      "train": 115,
+      "val": 25
+    },
+    "Appenzeller": {
+      "test": 22,
+      "train": 106,
+      "val": 23
+    },
+    "Australian_terrier": {
+      "test": 30,
+      "train": 137,
+      "val": 29
+    },
+    "Bedlington_terrier": {
+      "test": 28,
+      "train": 127,
+      "val": 27
+    },
+    "Bernese_mountain_dog": {
+      "test": 32,
+      "train": 153,
+      "val": 33
+    },
+    "Blenheim_spaniel": {
+      "test": 28,
+      "train": 132,
+      "val": 28
+    },
+    "Border_collie": {
+      "test": 23,
+      "train": 105,
+      "val": 22
+    },
+    "Border_terrier": {
+      "test": 26,
+      "train": 120,
+      "val": 26
+    },
+    "Boston_bull": {
+      "test": 28,
+      "train": 127,
+      "val": 27
+    },
+    "Bouvier_des_Flandres": {
+      "test": 23,
+      "train": 105,
+      "val": 22
+    },
+    "Brabancon_griffon": {
+      "test": 23,
+      "train": 107,
+      "val": 23
+    },
+    "Brittany_spaniel": {
+      "test": 23,
+      "train": 106,
+      "val": 23
+    },
+    "Cardigan": {
+      "test": 24,
+      "train": 108,
+      "val": 23
+    },
+    "Chesapeake_Bay_retriever": {
+      "test": 25,
+      "train": 117,
+      "val": 25
+    },
+    "Chihuahua": {
+      "test": 23,
+      "train": 106,
+      "val": 23
+    },
+    "Dandie_Dinmont": {
+      "test": 27,
+      "train": 126,
+      "val": 27
+    },
+    "Doberman": {
+      "test": 23,
+      "train": 105,
+      "val": 22
+    },
+    "English_foxhound": {
+      "test": 23,
+      "train": 110,
+      "val": 24
+    },
+    "English_setter": {
+      "test": 24,
+      "train": 113,
+      "val": 24
+    },
+    "English_springer": {
+      "test": 24,
+      "train": 111,
+      "val": 24
+    },
+    "EntleBucher": {
+      "test": 31,
+      "train": 141,
+      "val": 30
+    },
+    "Eskimo_dog": {
+      "test": 23,
+      "train": 105,
+      "val": 22
+    },
+    "French_bulldog": {
+      "test": 24,
+      "train": 111,
+      "val": 24
+    },
+    "German_shepherd": {
+      "test": 23,
+      "train": 106,
+      "val": 23
+    },
+    "German_short-haired_pointer": {
+      "test": 23,
+      "train": 106,
+      "val": 23
+    },
+    "Gordon_setter": {
+      "test": 23,
+      "train": 107,
+      "val": 23
+    },
+    "Great_Dane": {
+      "test": 24,
+      "train": 109,
+      "val": 23
+    },
+    "Great_Pyrenees": {
+      "test": 32,
+      "train": 149,
+      "val": 32
+    },
+    "Greater_Swiss_Mountain_dog": {
+      "test": 25,
+      "train": 118,
+      "val": 25
+    },
+    "Ibizan_hound": {
+      "test": 28,
+      "train": 132,
+      "val": 28
+    },
+    "Irish_setter": {
+      "test": 24,
+      "train": 108,
+      "val": 23
+    },
+    "Irish_terrier": {
+      "test": 26,
+      "train": 118,
+      "val": 25
+    },
+    "Irish_water_spaniel": {
+      "test": 23,
+      "train": 105,
+      "val": 22
+    },
+    "Irish_wolfhound": {
+      "test": 32,
+      "train": 153,
+      "val": 33
+    },
+    "Italian_greyhound": {
+      "test": 28,
+      "train": 127,
+      "val": 27
+    },
+    "Japanese_spaniel": {
+      "test": 27,
+      "train": 130,
+      "val": 28
+    },
+    "Kerry_blue_terrier": {
+      "test": 27,
+      "train": 125,
+      "val": 27
+    },
+    "Labrador_retriever": {
+      "test": 25,
+      "train": 120,
+      "val": 26
+    },
+    "Lakeland_terrier": {
+      "test": 29,
+      "train": 138,
+      "val": 30
+    },
+    "Leonberg": {
+      "test": 31,
+      "train": 147,
+      "val": 32
+    },
+    "Lhasa": {
+      "test": 28,
+      "train": 130,
+      "val": 28
+    },
+    "Maltese_dog": {
+      "test": 38,
+      "train": 176,
+      "val": 38
+    },
+    "Mexican_hairless": {
+      "test": 24,
+      "train": 108,
+      "val": 23
+    },
+    "Newfoundland": {
+      "test": 30,
+      "train": 136,
+      "val": 29
+    },
+    "Norfolk_terrier": {
+      "test": 26,
+      "train": 120,
+      "val": 26
+    },
+    "Norwegian_elkhound": {
+      "test": 30,
+      "train": 137,
+      "val": 29
+    },
+    "Norwich_terrier": {
+      "test": 27,
+      "train": 130,
+      "val": 28
+    },
+    "Old_English_sheepdog": {
+      "test": 26,
+      "train": 118,
+      "val": 25
+    },
+    "Pekinese": {
+      "test": 23,
+      "train": 104,
+      "val": 22
+    },
+    "Pembroke": {
+      "test": 27,
+      "train": 127,
+      "val": 27
+    },
+    "Pomeranian": {
+      "test": 33,
+      "train": 153,
+      "val": 33
+    },
+    "Rhodesian_ridgeback": {
+      "test": 26,
+      "train": 120,
+      "val": 26
+    },
+    "Rottweiler": {
+      "test": 23,
+      "train": 106,
+      "val": 23
+    },
+    "Saint_Bernard": {
+      "test": 25,
+      "train": 119,
+      "val": 26
+    },
+    "Saluki": {
+      "test": 30,
+      "train": 140,
+      "val": 30
+    },
+    "Samoyed": {
+      "test": 32,
+      "train": 153,
+      "val": 33
+    },
+    "Scotch_terrier": {
+      "test": 23,
+      "train": 111,
+      "val": 24
+    },
+    "Scottish_deerhound": {
+      "test": 35,
+      "train": 162,
+      "val": 35
+    },
+    "Sealyham_terrier": {
+      "test": 31,
+      "train": 141,
+      "val": 30
+    },
+    "Shetland_sheepdog": {
+      "test": 23,
+      "train": 110,
+      "val": 24
+    },
+    "Shih-Tzu": {
+      "test": 32,
+      "train": 150,
+      "val": 32
+    },
+    "Siberian_husky": {
+      "test": 29,
+      "train": 134,
+      "val": 29
+    },
+    "Staffordshire_bullterrier": {
+      "test": 24,
+      "train": 108,
+      "val": 23
+    },
+    "Sussex_spaniel": {
+      "test": 22,
+      "train": 106,
+      "val": 23
+    },
+    "Tibetan_mastiff": {
+      "test": 23,
+      "train": 106,
+      "val": 23
+    },
+    "Tibetan_terrier": {
+      "test": 31,
+      "train": 144,
+      "val": 31
+    },
+    "Walker_hound": {
+      "test": 23,
+      "train": 107,
+      "val": 23
+    },
+    "Weimaraner": {
+      "test": 24,
+      "train": 112,
+      "val": 24
+    },
+    "Welsh_springer_spaniel": {
+      "test": 23,
+      "train": 105,
+      "val": 22
+    },
+    "West_Highland_white_terrier": {
+      "test": 26,
+      "train": 118,
+      "val": 25
+    },
+    "Yorkshire_terrier": {
+      "test": 24,
+      "train": 115,
+      "val": 25
+    },
+    "affenpinscher": {
+      "test": 23,
+      "train": 105,
+      "val": 22
+    },
+    "basenji": {
+      "test": 32,
+      "train": 146,
+      "val": 31
+    },
+    "basset": {
+      "test": 27,
+      "train": 122,
+      "val": 26
+    },
+    "beagle": {
+      "test": 30,
+      "train": 136,
+      "val": 29
+    },
+    "black-and-tan_coonhound": {
+      "test": 24,
+      "train": 111,
+      "val": 24
+    },
+    "bloodhound": {
+      "test": 28,
+      "train": 131,
+      "val": 28
+    },
+    "bluetick": {
+      "test": 25,
+      "train": 120,
+      "val": 26
+    },
+    "borzoi": {
+      "test": 22,
+      "train": 106,
+      "val": 23
+    },
+    "boxer": {
+      "test": 22,
+      "train": 106,
+      "val": 23
+    },
+    "briard": {
+      "test": 23,
+      "train": 106,
+      "val": 23
+    },
+    "bull_mastiff": {
+      "test": 24,
+      "train": 109,
+      "val": 23
+    },
+    "cairn": {
+      "test": 29,
+      "train": 138,
+      "val": 30
+    },
+    "chow": {
+      "test": 30,
+      "train": 137,
+      "val": 29
+    },
+    "clumber": {
+      "test": 23,
+      "train": 105,
+      "val": 22
+    },
+    "cocker_spaniel": {
+      "test": 24,
+      "train": 111,
+      "val": 24
+    },
+    "collie": {
+      "test": 23,
+      "train": 107,
+      "val": 23
+    },
+    "curly-coated_retriever": {
+      "test": 22,
+      "train": 106,
+      "val": 23
+    },
+    "dhole": {
+      "test": 23,
+      "train": 105,
+      "val": 22
+    },
+    "dingo": {
+      "test": 24,
+      "train": 109,
+      "val": 23
+    },
+    "flat-coated_retriever": {
+      "test": 23,
+      "train": 106,
+      "val": 23
+    },
+    "giant_schnauzer": {
+      "test": 23,
+      "train": 110,
+      "val": 24
+    },
+    "golden_retriever": {
+      "test": 23,
+      "train": 105,
+      "val": 22
+    },
+    "groenendael": {
+      "test": 23,
+      "train": 105,
+      "val": 22
+    },
+    "keeshond": {
+      "test": 23,
+      "train": 111,
+      "val": 24
+    },
+    "kelpie": {
+      "test": 23,
+      "train": 107,
+      "val": 23
+    },
+    "komondor": {
+      "test": 23,
+      "train": 108,
+      "val": 23
+    },
+    "kuvasz": {
+      "test": 23,
+      "train": 105,
+      "val": 22
+    },
+    "malamute": {
+      "test": 26,
+      "train": 125,
+      "val": 27
+    },
+    "malinois": {
+      "test": 23,
+      "train": 105,
+      "val": 22
+    },
+    "miniature_pinscher": {
+      "test": 27,
+      "train": 129,
+      "val": 28
+    },
+    "miniature_poodle": {
+      "test": 24,
+      "train": 108,
+      "val": 23
+    },
+    "miniature_schnauzer": {
+      "test": 23,
+      "train": 108,
+      "val": 23
+    },
+    "otterhound": {
+      "test": 22,
+      "train": 106,
+      "val": 23
+    },
+    "papillon": {
+      "test": 30,
+      "train": 137,
+      "val": 29
+    },
+    "pug": {
+      "test": 30,
+      "train": 140,
+      "val": 30
+    },
+    "redbone": {
+      "test": 22,
+      "train": 104,
+      "val": 22
+    },
+    "schipperke": {
+      "test": 23,
+      "train": 108,
+      "val": 23
+    },
+    "silky_terrier": {
+      "test": 28,
+      "train": 128,
+      "val": 27
+    },
+    "soft-coated_wheaten_terrier": {
+      "test": 24,
+      "train": 109,
+      "val": 23
+    },
+    "standard_poodle": {
+      "test": 24,
+      "train": 111,
+      "val": 24
+    },
+    "standard_schnauzer": {
+      "test": 24,
+      "train": 108,
+      "val": 23
+    },
+    "toy_poodle": {
+      "test": 22,
+      "train": 106,
+      "val": 23
+    },
+    "toy_terrier": {
+      "test": 26,
+      "train": 120,
+      "val": 26
+    },
+    "vizsla": {
+      "test": 23,
+      "train": 108,
+      "val": 23
+    },
+    "whippet": {
+      "test": 28,
+      "train": 131,
+      "val": 28
+    },
+    "wire-haired_fox_terrier": {
+      "test": 23,
+      "train": 110,
+      "val": 24
+    }
+  },
+  "ratios": {
+    "test": 0.15,
+    "train": 0.7,
+    "val": 0.15
+  },
+  "seed": 42,
+  "use_bbox_crop": true
+}
