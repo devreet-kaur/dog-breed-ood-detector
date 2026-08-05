@@ -111,7 +111,7 @@ stages:
     deps:
       - src/ood_compare.py
       - reports/ood/strategy_a_metrics.json
-      - reports/ood/strategy_b_validation_metrics.json
+      - reports/ood/strategy_b_test_metrics.json
     metrics:
       - reports/ood/strategy_comparison.json:
           cache: false

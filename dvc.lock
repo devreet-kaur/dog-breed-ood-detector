@@ -240,31 +240,31 @@ stages:
       hash: md5
       md5: 84b092a2d4600c06d327ef222602749d
       size: 309
-    - path: reports/ood/strategy_b_validation_metrics.json
+    - path: reports/ood/strategy_b_test_metrics.json
       hash: md5
-      md5: 6ff3c811e580e976b930a6db972cc771
-      size: 432
+      md5: 06502ef3c513422552a1e6ce6cf39d4c
+      size: 369
     - path: src/ood_compare.py
       hash: md5
-      md5: a56528a3cc99458060d15dcfedea4a1f
-      size: 11447
+      md5: fa2b304d5d426d776237eb19c77ed2a1
+      size: 11441
     outs:
     - path: reports/ood/comparison_summary.txt
       hash: md5
-      md5: aea28fa9d082c7cd302ab3f9890c308c
+      md5: 2cc816b8a05109bb5f3d18fc9de1980d
       size: 484
     - path: reports/ood/strategy_comparison.csv
       hash: md5
-      md5: 19f3cc653d37eb9f447910acd60ab1d4
-      size: 280
+      md5: 89f2c6ad2bb1717be07ce9610392dce4
+      size: 279
     - path: reports/ood/strategy_comparison.json
       hash: md5
-      md5: dca6a73bae8468a8db07450f4e143cc9
-      size: 926
+      md5: 22b18af2f46ea66b5d417bbf65e3f721
+      size: 925
     - path: reports/ood/strategy_comparison.png
       hash: md5
-      md5: e371998765b23bbaacb08c2d5e1f74b0
-      size: 111881
+      md5: 15f9f701e8bc1b0b8adf18c4ed144052
+      size: 111931
   ood_entropy:
     cmd: python src/ood_entropy.py --num-workers 0
     deps:

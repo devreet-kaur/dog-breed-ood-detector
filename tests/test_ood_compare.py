@@ -2,12 +2,16 @@
 
 import json
 
+import numpy as np
 import pytest
 
 from src.ood_compare import (
     build_comparison,
     choose_better_strategy,
+    compute_reliability_curve,
     load_metrics,
+    load_score_file,
+    plot_reliability_comparison,
     save_comparison,
     validate_strategy_metrics,
 )
@@ -122,3 +126,63 @@ def test_save_comparison_writes_json(tmp_path) -> None:
     )
 
     assert saved == comparison
+    
+    
+def test_load_score_file_reads_npz(tmp_path) -> None:
+    output_path = tmp_path / "scores.npz"
+
+    np.savez_compressed(
+        output_path,
+        labels=np.array([0, 1, 0, 1]),
+        scores=np.array([0.1, 0.8, 0.2, 0.9]),
+    )
+
+    labels, scores = load_score_file(output_path)
+
+    assert labels.tolist() == [0, 1, 0, 1]
+    assert np.allclose(scores, [0.1, 0.8, 0.2, 0.9])
+
+
+def test_compute_reliability_curve_perfect_calibration() -> None:
+    labels = np.array([0, 0, 1, 1])
+    scores = np.array([0.0, 0.0, 1.0, 1.0])
+
+    result = compute_reliability_curve(
+        labels=labels,
+        scores=scores,
+        number_of_bins=5,
+    )
+
+    assert result["ece"] == pytest.approx(0.0)
+
+
+def test_compute_reliability_curve_returns_counts() -> None:
+    labels = np.array([0, 0, 1, 1])
+    scores = np.array([0.1, 0.2, 0.8, 0.9])
+
+    result = compute_reliability_curve(
+        labels=labels,
+        scores=scores,
+        number_of_bins=5,
+    )
+
+    assert sum(result["sample_counts"]) == 4
+
+
+def test_plot_reliability_comparison_creates_file(
+    tmp_path,
+) -> None:
+    output_path = tmp_path / "plots" / "reliability.png"
+
+    result = plot_reliability_comparison(
+        strategy_a_labels=np.array([0, 0, 1, 1]),
+        strategy_a_scores=np.array([0.1, 0.2, 0.8, 0.9]),
+        strategy_b_labels=np.array([0, 0, 1, 1]),
+        strategy_b_scores=np.array([0.2, 0.3, 0.7, 0.8]),
+        output_path=output_path,
+        number_of_bins=5,
+    )
+
+    assert output_path.exists()
+    assert "strategy_a_ece" in result
+    assert "strategy_b_ece" in result

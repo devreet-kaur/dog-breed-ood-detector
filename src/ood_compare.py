@@ -197,7 +197,7 @@ def parse_args() -> argparse.Namespace:
         "--strategy-b-metrics",
         type=Path,
         default=Path(
-            "reports/ood/strategy_b_validation_metrics.json"
+            "reports/ood/strategy_b_test_metrics.json"
         ),
         help="Path to Strategy B metrics JSON.",
     )
@@ -228,6 +228,34 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=Path("reports/ood/strategy_comparison.png"),
         help="Path for comparison chart.",
+    )
+    
+    parser.add_argument(
+        "--strategy-a-scores",
+        type=Path,
+        default=Path("reports/ood/strategy_a_test_scores.npz"),
+        help="Path to Strategy A labels and normalized OOD scores.",
+    )
+
+    parser.add_argument(
+        "--strategy-b-scores",
+        type=Path,
+        default=Path("reports/ood/strategy_b_test_scores.npz"),
+        help="Path to Strategy B labels and OOD probabilities.",
+    )
+
+    parser.add_argument(
+        "--reliability-output",
+        type=Path,
+        default=Path("reports/ood/reliability_comparison.png"),
+        help="Path for the reliability-curve comparison plot.",
+    )
+
+    parser.add_argument(
+        "--reliability-bins",
+        type=int,
+        default=10,
+        help="Number of bins used for reliability curves.",
     )
 
     return parser.parse_args()
@@ -380,11 +408,20 @@ def plot_metric_comparison(
 
     plt.close(figure)
     
+
     
 def run_comparison(args: argparse.Namespace) -> dict[str, Any]:
     """Load, compare, and save Strategy A and Strategy B results."""
     strategy_a_metrics = load_metrics(args.strategy_a_metrics)
     strategy_b_metrics = load_metrics(args.strategy_b_metrics)
+
+    strategy_a_labels, strategy_a_scores = load_score_file(
+        args.strategy_a_scores
+    )
+
+    strategy_b_labels, strategy_b_scores = load_score_file(
+        args.strategy_b_scores
+    )
 
     comparison = build_comparison(
         strategy_a_metrics=strategy_a_metrics,
@@ -410,6 +447,22 @@ def run_comparison(args: argparse.Namespace) -> dict[str, Any]:
         comparison=comparison,
         output_path=args.plot_output,
     )
+    
+    calibration_metrics = plot_reliability_comparison(
+        strategy_a_labels=strategy_a_labels,
+        strategy_a_scores=strategy_a_scores,
+        strategy_b_labels=strategy_b_labels,
+        strategy_b_scores=strategy_b_scores,
+        output_path=args.reliability_output,
+        number_of_bins=args.reliability_bins,
+    )
+
+    comparison["calibration"] = calibration_metrics
+
+    save_comparison(
+        comparison=comparison,
+        output_path=args.json_output,
+    )
 
     print("OOD strategy comparison complete")
     print(f"Overall winner: {comparison['overall_winner']}")
@@ -417,8 +470,202 @@ def run_comparison(args: argparse.Namespace) -> dict[str, Any]:
     print(f"CSV:     {args.csv_output}")
     print(f"Summary: {args.summary_output}")
     print(f"Plot:    {args.plot_output}")
+    print(
+        "Reliability: "
+        f"{args.reliability_output}"
+    )
+    print(
+        "Strategy A ECE: "
+        f"{calibration_metrics['strategy_a_ece']:.4f}"
+    )
+    print(
+        "Strategy B ECE: "
+        f"{calibration_metrics['strategy_b_ece']:.4f}"
+    )
 
     return comparison
+
+
+def load_score_file(
+    path: str | Path,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Load binary labels and OOD confidence scores from an NPZ file."""
+    path = Path(path)
+
+    if not path.exists():
+        raise FileNotFoundError(f"Score file not found: {path}")
+
+    data = np.load(path)
+
+    if "labels" not in data or "scores" not in data:
+        raise KeyError(
+            "Score file must contain 'labels' and 'scores' arrays"
+        )
+
+    labels = np.asarray(data["labels"])
+    scores = np.asarray(data["scores"], dtype=float)
+
+    if labels.ndim != 1 or scores.ndim != 1:
+        raise ValueError("labels and scores must be one-dimensional")
+
+    if labels.size != scores.size:
+        raise ValueError("labels and scores must have equal length")
+
+    if labels.size == 0:
+        raise ValueError("score file must not be empty")
+
+    if not np.all(np.isin(labels, [0, 1])):
+        raise ValueError("labels must contain only 0 and 1")
+
+    if not np.all(np.isfinite(scores)):
+        raise ValueError("scores must contain only finite values")
+
+    if np.any(scores < 0.0) or np.any(scores > 1.0):
+        raise ValueError("scores must be between 0 and 1")
+
+    return labels.astype(int), scores
+
+
+def compute_reliability_curve(
+    labels: np.ndarray,
+    scores: np.ndarray,
+    number_of_bins: int = 10,
+) -> dict[str, list[float] | float]:
+    """Compute reliability bins and expected calibration error."""
+    if number_of_bins <= 1:
+        raise ValueError("number_of_bins must be greater than one")
+
+    if labels.ndim != 1 or scores.ndim != 1:
+        raise ValueError("labels and scores must be one-dimensional")
+
+    if labels.size != scores.size:
+        raise ValueError("labels and scores must have equal length")
+
+    if labels.size == 0:
+        raise ValueError("labels and scores must not be empty")
+
+    bin_edges = np.linspace(0.0, 1.0, number_of_bins + 1)
+
+    mean_confidences: list[float] = []
+    observed_frequencies: list[float] = []
+    sample_counts: list[int] = []
+
+    expected_calibration_error = 0.0
+
+    for bin_index in range(number_of_bins):
+        lower_bound = bin_edges[bin_index]
+        upper_bound = bin_edges[bin_index + 1]
+
+        if bin_index == number_of_bins - 1:
+            in_bin = (
+                (scores >= lower_bound)
+                & (scores <= upper_bound)
+            )
+        else:
+            in_bin = (
+                (scores >= lower_bound)
+                & (scores < upper_bound)
+            )
+
+        count = int(in_bin.sum())
+
+        if count == 0:
+            continue
+
+        mean_confidence = float(scores[in_bin].mean())
+        observed_frequency = float(labels[in_bin].mean())
+
+        mean_confidences.append(mean_confidence)
+        observed_frequencies.append(observed_frequency)
+        sample_counts.append(count)
+
+        expected_calibration_error += (
+            count / labels.size
+        ) * abs(mean_confidence - observed_frequency)
+
+    return {
+        "mean_confidences": mean_confidences,
+        "observed_frequencies": observed_frequencies,
+        "sample_counts": sample_counts,
+        "ece": float(expected_calibration_error),
+    }
+
+
+def plot_reliability_comparison(
+    strategy_a_labels: np.ndarray,
+    strategy_a_scores: np.ndarray,
+    strategy_b_labels: np.ndarray,
+    strategy_b_scores: np.ndarray,
+    output_path: str | Path,
+    number_of_bins: int = 10,
+) -> dict[str, float]:
+    """Plot Strategy A and Strategy B reliability curves."""
+    strategy_a_curve = compute_reliability_curve(
+        labels=strategy_a_labels,
+        scores=strategy_a_scores,
+        number_of_bins=number_of_bins,
+    )
+
+    strategy_b_curve = compute_reliability_curve(
+        labels=strategy_b_labels,
+        scores=strategy_b_scores,
+        number_of_bins=number_of_bins,
+    )
+
+    figure, axis = plt.subplots(figsize=(8, 7))
+
+    axis.plot(
+        [0.0, 1.0],
+        [0.0, 1.0],
+        linestyle="--",
+        label="Perfect calibration",
+    )
+
+    axis.plot(
+        strategy_a_curve["mean_confidences"],
+        strategy_a_curve["observed_frequencies"],
+        marker="o",
+        label=(
+            "Strategy A — Predictive Entropy "
+            f"(ECE={strategy_a_curve['ece']:.4f})"
+        ),
+    )
+
+    axis.plot(
+        strategy_b_curve["mean_confidences"],
+        strategy_b_curve["observed_frequencies"],
+        marker="s",
+        label=(
+            "Strategy B — Binary CNN "
+            f"(ECE={strategy_b_curve['ece']:.4f})"
+        ),
+    )
+
+    axis.set_xlabel("Mean predicted OOD confidence")
+    axis.set_ylabel("Observed OOD frequency")
+    axis.set_title("OOD Reliability Curves")
+    axis.set_xlim(0.0, 1.0)
+    axis.set_ylim(0.0, 1.0)
+    axis.grid(alpha=0.3)
+    axis.legend()
+
+    figure.tight_layout()
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    figure.savefig(
+        output_path,
+        dpi=300,
+        bbox_inches="tight",
+    )
+
+    plt.close(figure)
+
+    return {
+        "strategy_a_ece": float(strategy_a_curve["ece"]),
+        "strategy_b_ece": float(strategy_b_curve["ece"]),
+    }
 
 
 def main() -> None:

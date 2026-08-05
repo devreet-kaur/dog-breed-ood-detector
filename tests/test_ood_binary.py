@@ -17,6 +17,7 @@ from src.ood_binary import (
     TrainingHistory,
     build_balanced_sampler,
     build_binary_dataloaders,
+    build_binary_test_dataloader,
     build_binary_transforms,
     collect_binary_predictions,
     compute_binary_fpr_at_tpr,
@@ -26,6 +27,7 @@ from src.ood_binary import (
     plot_training_history,
     save_binary_checkpoint,
     save_binary_metrics,
+    save_binary_scores,
     select_device,
     split_files,
     train_binary_model,
@@ -765,3 +767,95 @@ def test_limited_validation_subset_is_balanced(tmp_path) -> None:
 
     assert labels.count(0) == 4
     assert labels.count(1) == 4
+    
+
+def test_binary_test_dataloader_contains_both_classes(
+    tmp_path,
+) -> None:
+    dog_test = tmp_path / "dog_test"
+    ood_test = tmp_path / "ood_test"
+
+    for index in range(4):
+        create_test_image(
+            dog_test / "breed_a" / f"dog_{index}.jpg"
+        )
+
+    for index in range(3):
+        create_test_image(
+            ood_test / "cats" / f"ood_{index}.jpg"
+        )
+
+    loader = build_binary_test_dataloader(
+        dog_test_dir=dog_test,
+        ood_test_dir=ood_test,
+        image_size=32,
+        batch_size=2,
+        num_workers=0,
+    )
+
+    labels = [
+        label
+        for _, label in loader.dataset.samples
+    ]
+
+    assert labels.count(0) == 4
+    assert labels.count(1) == 3
+
+
+def test_binary_test_dataloader_uses_all_samples(
+    tmp_path,
+) -> None:
+    dog_test = tmp_path / "dog_test"
+    ood_test = tmp_path / "ood_test"
+
+    for index in range(5):
+        create_test_image(
+            dog_test / "breed_a" / f"dog_{index}.jpg"
+        )
+
+    for index in range(2):
+        create_test_image(
+            ood_test / "cars" / f"ood_{index}.jpg"
+        )
+
+    loader = build_binary_test_dataloader(
+        dog_test_dir=dog_test,
+        ood_test_dir=ood_test,
+        image_size=32,
+        batch_size=4,
+        num_workers=0,
+    )
+
+    assert len(loader.dataset) == 7
+    
+
+def test_save_binary_scores_writes_npz(tmp_path) -> None:
+    output_path = tmp_path / "scores" / "binary_scores.npz"
+
+    labels = torch.tensor([0, 1, 0, 1])
+    probabilities = torch.tensor([0.1, 0.9, 0.2, 0.8])
+
+    save_binary_scores(
+        labels=labels,
+        ood_probabilities=probabilities,
+        output_path=output_path,
+    )
+
+    saved = np.load(output_path)
+
+    assert saved["labels"].tolist() == [0, 1, 0, 1]
+    assert np.allclose(
+        saved["scores"],
+        [0.1, 0.9, 0.2, 0.8],
+    )
+
+
+def test_save_binary_scores_rejects_mismatched_lengths(
+    tmp_path,
+) -> None:
+    with pytest.raises(ValueError, match="equal length"):
+        save_binary_scores(
+            labels=torch.tensor([0, 1]),
+            ood_probabilities=torch.tensor([0.2]),
+            output_path=tmp_path / "scores.npz",
+        )

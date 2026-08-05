@@ -255,6 +255,42 @@ def build_binary_transforms(
     return train_transform, evaluation_transform
 
 
+def build_binary_test_dataloader(
+    dog_test_dir: str | Path,
+    ood_test_dir: str | Path,
+    image_size: int,
+    batch_size: int,
+    num_workers: int,
+) -> DataLoader:
+    """Build a held-out dog-versus-OOD test dataloader."""
+    if batch_size <= 0:
+        raise ValueError("batch_size must be greater than zero")
+
+    if num_workers < 0:
+        raise ValueError("num_workers must not be negative")
+
+    dog_test_files = discover_image_files(dog_test_dir)
+    ood_test_files = discover_image_files(ood_test_dir)
+
+    _, evaluation_transform = build_binary_transforms(
+        image_size=image_size
+    )
+
+    test_dataset = DogOODDataset(
+        dog_files=dog_test_files,
+        ood_files=ood_test_files,
+        transform=evaluation_transform,
+    )
+
+    return DataLoader(
+        test_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=torch.cuda.is_available(),
+    )
+
+
 def build_binary_dataloaders(
     dog_train_dir: str | Path,
     dog_val_dir: str | Path,
@@ -719,6 +755,30 @@ def compute_binary_metrics(
     }
 
 
+def save_binary_scores(
+    labels: torch.Tensor,
+    ood_probabilities: torch.Tensor,
+    output_path: str | Path,
+) -> None:
+    """Save held-out labels and predicted OOD probabilities."""
+    if labels.ndim != 1 or ood_probabilities.ndim != 1:
+        raise ValueError("labels and probabilities must be one-dimensional")
+
+    if labels.numel() != ood_probabilities.numel():
+        raise ValueError(
+            "labels and probabilities must have equal length"
+        )
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    np.savez_compressed(
+        output_path,
+        labels=labels.detach().cpu().numpy(),
+        scores=ood_probabilities.detach().cpu().numpy(),
+    )
+
+
 def save_binary_metrics(
     metrics: dict[str, Any],
     output_path: str | Path,
@@ -925,6 +985,74 @@ def select_device() -> torch.device:
     return torch.device("cpu")
 
 
+def evaluate_binary_checkpoint(
+    checkpoint_path: str | Path,
+    dog_test_dir: str | Path,
+    ood_test_dir: str | Path,
+    image_size: int,
+    batch_size: int,
+    num_workers: int,
+    dropout: float,
+    target_tpr: float,
+    device: torch.device,
+    metrics_output: str | Path,
+    scores_output: str | Path,
+) -> dict[str, float | int]:
+    """Evaluate the saved binary CNN on the held-out test set."""
+    test_loader = build_binary_test_dataloader(
+        dog_test_dir=dog_test_dir,
+        ood_test_dir=ood_test_dir,
+        image_size=image_size,
+        batch_size=batch_size,
+        num_workers=num_workers,
+    )
+
+    model = BinaryCNN(dropout=dropout).to(device)
+
+    model.load_state_dict(
+        torch.load(
+            checkpoint_path,
+            map_location=device,
+            weights_only=True,
+        )
+    )
+
+    labels, ood_probabilities, predictions = (
+        collect_binary_predictions(
+            model=model,
+            dataloader=test_loader,
+            device=device,
+        )
+    )
+    
+    save_binary_scores(
+        labels=labels,
+        ood_probabilities=ood_probabilities,
+        output_path=scores_output,
+    )
+
+    metrics = compute_binary_metrics(
+        labels=labels,
+        ood_probabilities=ood_probabilities,
+        predictions=predictions,
+        target_tpr=target_tpr,
+    )
+
+    save_binary_metrics(
+        metrics=metrics,
+        output_path=metrics_output,
+    )
+
+    logger.info("Held-out Strategy B evaluation complete")
+    logger.info("Test samples:     %d", len(test_loader.dataset))
+    logger.info("AUROC:            %.4f", metrics["auroc"])
+    logger.info("AUPR-IN:          %.4f", metrics["aupr_in"])
+    logger.info("AUPR-OUT:         %.4f", metrics["aupr_out"])
+    logger.info("FPR@95TPR:        %.4f", metrics["fpr95"])
+
+    return metrics
+
+
 def plot_training_history(
     history: TrainingHistory,
     output_path: str | Path,
@@ -1106,6 +1234,40 @@ def parse_args() -> argparse.Namespace:
             "Use 0 on Windows if multiprocessing causes issues."
         ),
     )
+    
+    parser.add_argument(
+        "--dog-test-dir",
+        type=Path,
+        default=Path("data/processed/test"),
+        help="Directory containing held-out dog test images.",
+    )
+
+    parser.add_argument(
+        "--ood-test-dir",
+        type=Path,
+        default=Path("data/raw/ood/test"),
+        help="Directory containing held-out OOD test images.",
+    )
+    
+    parser.add_argument(
+        "--test-metrics-output",
+        type=Path,
+        default=Path("reports/ood/strategy_b_test_metrics.json"),
+        help="Path for held-out Strategy B test metrics.",
+    )
+
+    parser.add_argument(
+        "--evaluate-only",
+        action="store_true",
+        help="Load the saved checkpoint and evaluate on held-out test data.",
+    )
+    
+    parser.add_argument(
+        "--test-scores-output",
+        type=Path,
+        default=Path("reports/ood/strategy_b_test_scores.npz"),
+        help="Path for held-out Strategy B labels and OOD probabilities.",
+    )
 
     return parser.parse_args()
 
@@ -1139,6 +1301,21 @@ def run_binary_pipeline(
         else int(data_config["num_workers"])
     )
     
+    if args.evaluate_only:
+        return evaluate_binary_checkpoint(
+            checkpoint_path=args.checkpoint,
+            dog_test_dir=args.dog_test_dir,
+            ood_test_dir=args.ood_test_dir,
+            image_size=int(data_config["img_size"]),
+            batch_size=int(binary_config["batch_size"]),
+            num_workers=num_workers,
+            dropout=float(binary_config["dropout"]),
+            target_tpr=target_tpr,
+            device=device,
+            metrics_output=args.test_metrics_output,
+            scores_output=args.test_scores_output,
+        )
+        
     train_loader, validation_loader = (
         build_binary_dataloaders(
             dog_train_dir=args.dog_train_dir,
