@@ -368,6 +368,48 @@ def save_metrics(
         json.dumps(metrics, indent=2),
         encoding="utf-8",
     )
+
+
+def save_entropy_scores(
+    id_scores: torch.Tensor,
+    ood_scores: torch.Tensor,
+    number_of_classes: int,
+    output_path: str | Path,
+) -> None:
+    """Save held-out labels and normalized entropy-based OOD scores."""
+    if number_of_classes <= 1:
+        raise ValueError("number_of_classes must be greater than one")
+
+    if id_scores.ndim != 1 or ood_scores.ndim != 1:
+        raise ValueError("entropy scores must be one-dimensional")
+
+    if id_scores.numel() == 0 or ood_scores.numel() == 0:
+        raise ValueError("entropy score tensors must not be empty")
+
+    maximum_entropy = float(np.log(number_of_classes))
+
+    combined_scores = torch.cat(
+        [
+            id_scores / maximum_entropy,
+            ood_scores / maximum_entropy,
+        ]
+    ).clamp(0.0, 1.0)
+
+    labels = torch.cat(
+        [
+            torch.zeros(id_scores.numel(), dtype=torch.int64),
+            torch.ones(ood_scores.numel(), dtype=torch.int64),
+        ]
+    )
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    np.savez_compressed(
+        output_path,
+        labels=labels.numpy(),
+        scores=combined_scores.detach().cpu().numpy(),
+    )
     
 
 def load_config(config_path: str | Path) -> dict[str, Any]:
@@ -534,6 +576,13 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Validate configuration, model, and datasets without inference.",
     )
+    
+    parser.add_argument(
+        "--scores-output",
+        type=Path,
+        default=Path("reports/ood/strategy_a_test_scores.npz"),
+        help="Path for held-out Strategy A labels and normalized entropy scores.",
+    )
 
     return parser.parse_args()
 
@@ -656,6 +705,13 @@ def run_entropy_pipeline(
         dataloader=ood_test_loader,
         device=device,
         temperature=temperature,
+    )
+    
+    save_entropy_scores(
+        id_scores=id_test_scores,
+        ood_scores=ood_test_scores,
+        number_of_classes=int(data_config["num_classes"]),
+        output_path=args.scores_output,
     )
 
     metrics = compute_ood_metrics(

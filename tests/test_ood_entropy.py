@@ -18,6 +18,7 @@ from src.ood_entropy import (
     compute_ood_metrics,
     load_config,
     plot_entropy_distribution,
+    save_entropy_scores,
     save_metrics,
     save_threshold,
     validate_ood_scores,
@@ -475,4 +476,40 @@ def test_plot_entropy_distribution_rejects_nonfinite_threshold(
             ood_scores=torch.tensor([0.9]),
             threshold=float("nan"),
             output_path=tmp_path / "plot.png",
+        )
+        
+        
+def test_save_entropy_scores_writes_npz(tmp_path) -> None:
+    output_path = tmp_path / "scores" / "entropy_scores.npz"
+
+    id_scores = torch.tensor([0.2, 0.4])
+    ood_scores = torch.tensor([1.2, 1.4])
+
+    save_entropy_scores(
+        id_scores=id_scores,
+        ood_scores=ood_scores,
+        number_of_classes=4,
+        output_path=output_path,
+    )
+
+    saved = np.load(output_path)
+
+    assert saved["labels"].tolist() == [0, 0, 1, 1]
+    assert len(saved["scores"]) == 4
+    assert np.all(saved["scores"] >= 0.0)
+    assert np.all(saved["scores"] <= 1.0)
+
+
+def test_save_entropy_scores_rejects_invalid_class_count(
+    tmp_path,
+) -> None:
+    with pytest.raises(
+        ValueError,
+        match="greater than one",
+    ):
+        save_entropy_scores(
+            id_scores=torch.tensor([0.2]),
+            ood_scores=torch.tensor([0.8]),
+            number_of_classes=1,
+            output_path=tmp_path / "scores.npz",
         )
