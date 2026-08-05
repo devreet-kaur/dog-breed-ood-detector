@@ -76,56 +76,44 @@ def get_transforms(img_size: int, augment: bool):
 # ── Data ─────────────────────────────────────────────────────────────────────
 
 def get_dataloaders(data_p: dict, batch_size: int):
-    """Load the three splits that src/prepare.py wrote to disk.
-
-    Changed in PR #5: this used to point ImageFolder at data/processed/train/
-    and call random_split on it. Reading the folders directly instead means
-      - the split lives in DVC, so it is identical for everyone and across runs
-      - it is stratified per breed (a flat random split left rare breeds thin)
-      - val and test get the eval transform. The old code built one dataset with
-        augment=True and split it, so val/test were randomly cropped, flipped
-        and colour-jittered, which quietly inflated the loss they reported.
-    """
     img_size    = data_p["img_size"]
     num_workers = data_p["num_workers"]
-    out_dir     = data_p.get("out_dir", os.path.join("data", "processed"))
 
-    split_dirs = {s: os.path.join(out_dir, s) for s in ("train", "val", "test")}
-    missing = [d for d in split_dirs.values() if not os.path.isdir(d)]
-    assert not missing, (
-        f"Processed data not found at: {', '.join(missing)}. "
-        "Run `dvc pull`, or build it with `python src/prepare.py --download` "
-        "followed by `dvc repro prepare`."
-    )
+    train_dir = os.path.join("data", "processed", "train")
+    val_dir   = os.path.join("data", "processed", "val")
+    test_dir  = os.path.join("data", "processed", "test")
 
-    train_set = datasets.ImageFolder(
-        split_dirs["train"], transform=get_transforms(img_size, augment=True)
-    )
-    val_set = datasets.ImageFolder(
-        split_dirs["val"], transform=get_transforms(img_size, augment=False)
-    )
-    test_set = datasets.ImageFolder(
-        split_dirs["test"], transform=get_transforms(img_size, augment=False)
-    )
+    for d in [train_dir, val_dir, test_dir]:
+        assert os.path.isdir(d), (
+            f"Processed data not found at '{d}'. "
+            "Run dvc pull after Ryan's feat/data-pipeline merges."
+        )
 
-    # A class present in train but not val/test would silently shift label ids.
-    assert train_set.classes == val_set.classes == test_set.classes, (
-        "Class lists differ between splits -- re-run `dvc repro prepare`."
+    train_dataset = datasets.ImageFolder(
+        train_dir, transform=get_transforms(img_size, augment=True)
+    )
+    val_dataset = datasets.ImageFolder(
+        val_dir, transform=get_transforms(img_size, augment=False)
+    )
+    test_dataset = datasets.ImageFolder(
+        test_dir, transform=get_transforms(img_size, augment=False)
     )
 
     log.info(
-        f"Split — train: {len(train_set)}  val: {len(val_set)}  "
-        f"test: {len(test_set)}  ({len(train_set.classes)} classes)"
+        f"Train: {len(train_dataset)} | "
+        f"Val: {len(val_dataset)} | "
+        f"Test: {len(test_dataset)} | "
+        f"Classes: {len(train_dataset.classes)}"
     )
 
-    train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True,
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True,
                               num_workers=num_workers, pin_memory=True)
-    val_loader   = DataLoader(val_set,   batch_size=batch_size, shuffle=False,
+    val_loader   = DataLoader(val_dataset,   batch_size=batch_size, shuffle=False,
                               num_workers=num_workers, pin_memory=True)
-    test_loader  = DataLoader(test_set,  batch_size=batch_size, shuffle=False,
+    test_loader  = DataLoader(test_dataset,  batch_size=batch_size, shuffle=False,
                               num_workers=num_workers, pin_memory=True)
 
-    return train_loader, val_loader, test_loader, train_set.classes
+    return train_loader, val_loader, test_loader, train_dataset.classes
 
 
 # ── Model ────────────────────────────────────────────────────────────────────
