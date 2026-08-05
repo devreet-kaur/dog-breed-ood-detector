@@ -17,18 +17,16 @@ import argparse
 import json
 from pathlib import Path
 
-import cv2
 import numpy as np
 import torch
-import torch.nn as nn
-import torchvision.models as models
 import torchvision.transforms as T
+import yaml
 from PIL import Image
 from pytorch_grad_cam import GradCAM
 from pytorch_grad_cam.utils.image import show_cam_on_image
 from pytorch_grad_cam.utils.model_targets import ClassifierOutputTarget
-
-import yaml
+from torch import nn
+from torchvision import models
 
 
 def load_params(params_path: str = "params.yaml") -> dict:
@@ -38,7 +36,10 @@ def load_params(params_path: str = "params.yaml") -> dict:
 
 def load_model(model_path: str, num_classes: int, device: torch.device) -> nn.Module:
     model = models.resnet18(weights=None)
-    model.fc = nn.Linear(model.fc.in_features, num_classes)
+    model.fc = nn.Sequential(
+    nn.Dropout(p=0.4),
+    nn.Linear(model.fc.in_features, num_classes)
+    )
     state = torch.load(model_path, map_location=device)
     model.load_state_dict(state)
     model.eval()

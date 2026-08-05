@@ -15,7 +15,7 @@ data/**
 *.json.gz
 
 # ── Models -- DVC outputs, never in Git ──────────────
-models/
+models/*
 *.pt
 *.pth
 *.pkl
@@ -148,3 +148,4 @@ htmlcov/
 coverage.xml
 *.cover
 *.py,cover
+!models/temperature.json

@@ -25,14 +25,12 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-import torch.nn as nn
-import torch.optim as optim
-import torchvision.models as models
 import torchvision.transforms as T
-from torch.utils.data import DataLoader
-from torchvision.datasets import ImageFolder
-
 import yaml
+from torch import nn, optim
+from torch.utils.data import DataLoader
+from torchvision import models
+from torchvision.datasets import ImageFolder
 
 
 def load_params(params_path: str = "params.yaml") -> dict:
@@ -42,7 +40,10 @@ def load_params(params_path: str = "params.yaml") -> dict:
 
 def load_model(model_path: str, num_classes: int, device: torch.device) -> nn.Module:
     model = models.resnet18(weights=None)
-    model.fc = nn.Linear(model.fc.in_features, num_classes)
+    model.fc = nn.Sequential(
+        nn.Dropout(p=0.4),
+        nn.Linear(model.fc.in_features, num_classes)
+    )
     state = torch.load(model_path, map_location=device)
     model.load_state_dict(state)
     model.eval()
@@ -153,7 +154,7 @@ def reliability_diagram(
             bin_conf.append(confidences.numpy()[mask].mean())
             bin_count.append(mask.sum())
 
-    fig, ax = plt.subplots(figsize=(6, 6))
+    _, ax = plt.subplots(figsize=(6, 6))
     ax.bar(bin_mids, bin_acc, width=1 / n_bins, alpha=0.7,
            color="#378ADD", edgecolor="white", label="Model accuracy")
     ax.plot([0, 1], [0, 1], "k--", linewidth=1, label="Perfect calibration")
