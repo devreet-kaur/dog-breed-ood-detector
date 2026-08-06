@@ -48,7 +48,7 @@ pydantic==2.13.4
 evidently==0.7.21
 
 # Pipeline
-dvc==3.67.1
+dvc[gdrive]==3.67.1
 # No remote-storage plugin needed: the Google Drive remote is a plain
 # filesystem path via Drive for Desktop, which core dvc handles natively.
 # (Was dvc-webdav==3.0.1 for the old HuggingFace remote.)
