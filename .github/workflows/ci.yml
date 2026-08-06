@@ -68,6 +68,9 @@ jobs:
       - name: Run API tests
         run: python -m pytest tests/test_api.py -v --tb=short
 
+      - name: Smoke test monitor.py imports cleanly
+        run: python -c "import sys; sys.path.insert(0, 'src'); import monitor; print('monitor.py imports OK')"
+
   # ── Job 3: Docker build ─────────────────────────────────────────────────────
   docker:
     name: Docker build
@@ -86,6 +89,7 @@ jobs:
 
       - name: Smoke test -- /health endpoint
         run: |
+          # Liveness check only, no model files mounted, health check runs on fallback defaults.
           docker run -d --name mai202-ci -p 8000:8000 mai202-dog-ood:ci
           sleep 15
           curl --retry 5 --retry-delay 3 --retry-connrefused \

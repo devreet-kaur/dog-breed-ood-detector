@@ -136,7 +136,7 @@ Breed identification for dog photos, with a reject option (`is_ood: true`) when 
 - FastAPI: `GET /health`, `POST /predict`
 - Strategy B takes priority when `models/binary_cnn.pt` is available; falls back to Strategy A, then to no OOD gating, gracefully
 - Docker: `python:3.11-slim`, `libgomp1` installed for PyTorch CPU wheel support, port 5001 (macOS) / 8000 (Windows/Linux)
-- CI: lint, test, docker build, smoke test on every push *(in progress — feat/ci)*
+- CI: lint, test, docker build, smoke test on every push (this PR)
 - Drift monitoring: EvidentlyAI on inference logs *(in progress — feat/ci)*
 
 ---
