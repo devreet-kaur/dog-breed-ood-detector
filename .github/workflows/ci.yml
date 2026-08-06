@@ -5,7 +5,7 @@
 # Triggers on every push and PR to develop and main.
 # Jobs:
 #   1. lint    -- ruff check
-#   2. test    -- pytest (35 pipeline tests + 9 API tests)
+#   2. test    -- pytest (all pipeline + OOD tests, plus API tests)
 #   3. docker  -- docker build smoke test
 #   4. smoke   -- curl /health inside the container
 
@@ -63,7 +63,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run pipeline tests
-        run: python -m pytest tests/test_prepare.py -v --tb=short
+        run: python -m pytest tests/test_prepare.py tests/test_pipeline.py tests/test_ood_entropy.py tests/test_ood_binary.py tests/test_ood_compare.py -v --tb=short
 
       - name: Run API tests
         run: python -m pytest tests/test_api.py -v --tb=short

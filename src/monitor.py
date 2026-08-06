@@ -25,14 +25,14 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import yaml
-from evidently.metric_preset import DataDriftPreset
-from evidently.report import Report
+from evidently import Report
+from evidently.presets import DataDriftPreset
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
@@ -104,26 +104,24 @@ def run_drift_report(
     out_path: Path,
 ) -> dict:
     """Run EvidentlyAI drift report and save HTML + summary JSON."""
-    report = Report(metrics=[DataDriftPreset()])
-    report.run(reference_data=reference, current_data=current)
+    report = Report([DataDriftPreset()])
+    my_eval = report.run(current, reference)
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    report.save_html(str(out_path))
+    my_eval.save_html(str(out_path))
     log.info("Drift report saved to %s", out_path)
 
-    result  = report.as_dict()
+    result  = my_eval.dict()
     metrics = result.get("metrics", [])
 
     drifted_cols = 0
-    total_cols   = 0
+    total_cols   = len(set(reference.columns) & set(current.columns))
     for m in metrics:
-        result_data = m.get("result", {})
-        if "number_of_drifted_columns" in result_data:
-            drifted_cols = result_data["number_of_drifted_columns"]
-            total_cols   = result_data.get("number_of_columns", 0)
+        if m.get("metric_name", "").startswith("DriftedColumnsCount"):
+            drifted_cols = int(m.get("value", {}).get("count", 0))
 
     summary = {
-        "timestamp":          datetime.now(tz=datetime.timezone.utc).isoformat(),
+        "timestamp":          datetime.now(tz=timezone.utc).isoformat(),
         "reference_size":     len(reference),
         "current_size":       len(current),
         "drifted_columns":    drifted_cols,
@@ -154,7 +152,7 @@ def main() -> None:
                         help="Max images to sample from each folder")
     args = parser.parse_args()
 
-    timestamp = datetime.now(tz=datetime.timezone.utc).strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(tz=timezone.utc).strftime("%Y%m%d_%H%M%S")
     out_path  = Path(args.out) if args.out else DRIFT_DIR / f"report_{timestamp}.html"
 
     if args.log:
