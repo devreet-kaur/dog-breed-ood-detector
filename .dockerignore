@@ -40,6 +40,7 @@ reports/plots/
 reports/drift/
 reports/calibration/
 reports/gradcam/
+reports/ood_analysis/
 
 # Notebooks
 notebooks/
