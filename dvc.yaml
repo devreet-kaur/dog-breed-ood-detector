@@ -42,6 +42,20 @@ stages:
       - reports/metrics_train.json:
           cache: false
 
+  calibrate:
+    cmd: python src/calibrate.py
+    deps:
+      - src/calibrate.py
+      - models/resnet18_best.pt
+      - data/processed/val
+    params:
+      - params.yaml:
+          - data
+          - train_head
+    metrics:
+      - models/temperature.json:
+          cache: false
+
   evaluate:
     cmd: python src/evaluate.py
     deps:

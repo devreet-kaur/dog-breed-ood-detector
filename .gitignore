@@ -149,3 +149,5 @@ coverage.xml
 *.cover
 *.py,cover
 !models/temperature.json
+!.env.example
+!.env.example

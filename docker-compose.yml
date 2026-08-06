@@ -1,0 +1,40 @@
+# docker-compose.yml
+# Dog Breed + OOD Detector
+# Owner: Devreet
+#
+# macOS:   docker compose up  -> API at http://localhost:5001
+# Windows: docker compose up  -> API at http://localhost:8000
+#
+# Port 5000 is blocked by AirPlay Receiver on macOS.
+# Port mapping: 5001:8000 on macOS, 8000:8000 on Windows/Linux.
+
+services:
+  api:
+    build: .
+    image: mai202-dog-ood:latest
+    container_name: mai202-dog-ood-api
+
+    # macOS: port 5001 (AirPlay blocks 5000)
+    # Windows/Linux: change to 8000:8000
+    ports:
+      - "${HOST_PORT:-8000}:8000"
+
+    # Mount model files and data at runtime
+    # This way the image does not need to be rebuilt when models are updated
+    volumes:
+      - ./models:/app/models:ro
+      - ./data/processed:/app/data/processed:ro
+      - ./reports/ood:/app/reports/ood:ro
+
+    environment:
+      - PYTHONUNBUFFERED=1
+
+    restart: unless-stopped
+
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
