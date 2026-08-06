@@ -19,6 +19,7 @@ Outputs:
 """
 
 import argparse
+import itertools
 import json
 from pathlib import Path
 
@@ -143,7 +144,7 @@ def reliability_diagram(
     bin_conf       = []
     bin_count      = []
 
-    for lo, hi in zip(bin_boundaries[:-1], bin_boundaries[1:]):
+    for lo, hi in itertools.pairwise(bin_boundaries):
         mask = (confidences.numpy() > lo) & (confidences.numpy() <= hi)
         if mask.sum() == 0:
             bin_acc.append(0)
