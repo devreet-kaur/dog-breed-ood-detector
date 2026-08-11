@@ -24,7 +24,7 @@ models/*
 *.safetensors
 
 # ── DVC pipeline outputs ──────────────────────────────
-reports/plots/
+reports/plots/*
 reports/ood/
 reports/drift/
 
@@ -151,3 +151,4 @@ coverage.xml
 !models/temperature.json
 !.env.example
 !.env.example
+!reports/plots/confusion_matrix.png
