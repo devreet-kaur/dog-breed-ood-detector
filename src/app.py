@@ -30,7 +30,7 @@ from pathlib import Path
 import torch
 import torch.nn.functional as F
 import yaml
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, Response, UploadFile, status
 from PIL import Image
 from pydantic import BaseModel
 from torch import nn
@@ -195,7 +195,7 @@ def startup() -> None:
 
 class HealthResponse(BaseModel):
     status: str
-    model: str
+    model: str | None
     classes: int
     device: str
     temperature: float
@@ -225,10 +225,13 @@ app = FastAPI(
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @app.get("/health", response_model=HealthResponse)
-def health() -> HealthResponse:
+def health(response: Response) -> HealthResponse:
+    breed_loaded = _state.get("breed_model") is not None
+    if not breed_loaded:
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     return HealthResponse(
-        status="ok",
-        model="resnet18",
+        status="ok" if breed_loaded else "degraded",
+        model="resnet18" if breed_loaded else None,
         classes=_state.get("num_classes", 0),
         device=str(_state.get("device", "unknown")),
         temperature=_state.get("temperature", 1.0),

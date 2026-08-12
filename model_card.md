@@ -1,4 +1,4 @@
-# Model Card — Dog Breed Classifier with OOD Detection
+# Model Card: Dog Breed Classifier with OOD Detection
 
 **Project:** MAI202 Deep Learning, Seneca Polytechnic
 **Repo:** devreet-kaur/dog-breed-ood-detector
@@ -21,8 +21,8 @@
 
 ### Training procedure
 Two-stage fine-tuning:
-1. **Head-only** — backbone frozen, 5 epochs, lr=1e-3, dropout=0.4
-2. **Full fine-tune** — cosine annealing, lr_initial=1e-4, lr_min=1e-6, weight_decay=1e-4, label_smoothing=0.1, early stopping (patience=7)
+1. **Head-only**: backbone frozen, 5 epochs, lr=1e-3, dropout=0.4
+2. **Full fine-tune**: cosine annealing, lr_initial=1e-4, lr_min=1e-6, weight_decay=1e-4, label_smoothing=0.1, early stopping (patience=7)
 
 All hyperparameters in `params.yaml`, no hardcoded values in training code.
 
@@ -61,7 +61,7 @@ Post-hoc temperature scaling (Guo et al., 2017), LBFGS minimizing NLL on val set
 | ECE before | 0.1215 |
 | ECE after | 0.1287 |
 
-Model was already well-calibrated at export, most likely because `label_smoothing=0.1` during finetuning suppresses overconfident logits the same way temperature scaling would. The small ECE increase reflects LBFGS optimizing NLL, not ECE directly — not a real degradation.
+Model was already well-calibrated at export, most likely because `label_smoothing=0.1` during finetuning suppresses overconfident logits the same way temperature scaling would. The small ECE increase reflects LBFGS optimizing NLL, not ECE directly. It is not a real degradation.
 
 ### OOD Detection
 
@@ -75,7 +75,7 @@ Evaluated on the identical held-out OOD test set (3,099 ID + 1,000 OOD images).
 | FPR@95TPR | 0.1200 | 0.6531 | Strategy A |
 | Threshold | 3.0241 | N/A | — |
 
-**Strategy A vs B calibration** (ECE of the OOD-detection decision itself — not to be confused with the breed classifier's own confidence calibration reported above, a separate metric):
+**Strategy A vs B calibration** (ECE of the OOD-detection decision itself, not to be confused with the breed classifier's own confidence calibration reported above, a separate metric):
 
 | | ECE |
 |---|---|
@@ -102,7 +102,7 @@ Evaluated on the identical held-out OOD test set (3,099 ID + 1,000 OOD images).
 
 Grad-CAM (layer4[-1]) applied to test predictions. Heatmaps consistently concentrate on the dog itself (coat, torso, head), not background. For long-coated breeds (e.g. Afghan hound), attention focuses on coat texture rather than facial structure, which is consistent with observed failure cases involving other coat-similar breeds (e.g. Afghan hound → borzoi).
 
-On a 50-image verification batch: 45/50 (90%) correct — note this batch is not representative of overall test accuracy (it covered only 2 breeds, selected alphabetically, not randomly sampled).
+On a 50-image verification batch: 45/50 (90%) correct. This batch is not representative of overall test accuracy, since it covered only 2 breeds, selected alphabetically, not randomly sampled.
 
 ---
 
@@ -117,7 +117,7 @@ Breed identification for dog photos, with a reject option (`is_ood: true`) when 
 
 ## Limitations
 
-- Cats are a persistent blind spot for Strategy A (67% detection vs. 86%+ for every other category) — visually the closest OOD category to a dog.
+- Cats are a persistent blind spot for Strategy A (67% detection vs. 86%+ for every other category), visually the closest OOD category to a dog.
 - Only 5 OOD categories tested; real-world OOD inputs will be far more diverse than cats/birds/cars/food/furniture.
 - Training data size is modest relative to the granularity of 120 breed classes; some breed pairs likely remain visually indistinguishable to the model (see confusion matrix, Arushi's section).
 - Not evaluated on adversarial inputs.
@@ -137,7 +137,7 @@ Breed identification for dog photos, with a reject option (`is_ood: true`) when 
 - Strategy B takes priority when `models/binary_cnn.pt` is available; falls back to Strategy A, then to no OOD gating, gracefully
 - Docker: `python:3.11-slim`, `libgomp1` installed for PyTorch CPU wheel support, port 5001 (macOS) / 8000 (Windows/Linux)
 - CI: lint, test, docker build, smoke test on every push (this PR)
-- Drift monitoring: EvidentlyAI on inference logs *(in progress — feat/ci)*
+- Drift monitoring: EvidentlyAI on inference logs *(in progress, feat/ci)*
 
 ---
 
