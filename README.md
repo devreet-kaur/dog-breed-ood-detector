@@ -2,7 +2,7 @@
 
 Fine-grained dog breed classifier (120 breeds, Stanford Dogs) with an out-of-distribution (OOD) detection layer that rejects non-dog inputs. Compares two OOD strategies: softmax entropy thresholding vs. a supervised binary CNN gate. Built with PyTorch, DVC, MLflow, and FastAPI.
 
-**MAI202 Deep Learning — Seneca Polytechnic, Summer 2026**
+**MAI202 Deep Learning, Seneca Polytechnic, Summer 2026**
 Team: Ryan Caezar Soria, Arushi Anand, Soodeh Vanaki, Devreet Kaur
 
 ---
@@ -59,6 +59,9 @@ Track experiments with MLflow:
 ```bash
 mlflow ui --port 5001 --backend-store-uri sqlite:///mlflow.db
 ```
+Note: on macOS both MLflow and the API default to port 5001, since port 5000 is
+reserved by AirPlay Receiver. Stop one before starting the other, or pass
+`--port` on either command to use a different port.
 
 ---
 

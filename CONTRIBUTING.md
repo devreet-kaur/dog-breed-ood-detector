@@ -10,11 +10,11 @@
 | Documentation | docs/short-description | docs/model-card |
 | Tests only | test/short-description | test/api-edge-cases |
 
-Always branch off dev, never off main.
+Always branch off develop, never off main.
 
 ```bash
-git checkout dev
-git pull origin dev
+git checkout develop
+git pull origin develop
 git checkout -b feat/your-task-name
 ```
 
@@ -40,10 +40,10 @@ Never write vague messages like "fix bug", "update", or "changes".
 Run all of these and confirm they pass:
 
 ```bash
-# 1. Make sure you are up to date with dev
-git checkout dev && git pull origin dev
+# 1. Make sure you are up to date with develop
+git checkout develop && git pull origin develop
 git checkout your-branch
-git merge dev
+git merge develop
 
 # 2. Run tests
 python -m pytest tests/ -v
@@ -65,7 +65,7 @@ ruff check src/ tests/
 
 ## PR rules
 
-- Every PR targets dev, never main directly
+- Every PR targets develop, never main directly
 - Minimum 2 approvals required before merge
 - At least one reviewer must be from a different area (data person reviews model PR, etc.)
 - Fill in the PR template completely -- blank sections will not be approved
@@ -73,8 +73,8 @@ ruff check src/ tests/
 
 ## Merge strategy
 
-Use Squash and merge for feature branches into dev.
-Use Merge commit for the final dev into main PR (#10).
+Use Squash and merge for feature branches into develop.
+Use Merge commit for the final develop into main PR.
 
 ## Data and DVC
 
@@ -98,7 +98,7 @@ pip install -r requirements.txt
 dvc remote modify --local gdrive_remote gdrive_client_id "<CLIENT_ID>"
 dvc remote modify --local gdrive_remote gdrive_client_secret "<CLIENT_SECRET>"
 
-dvc pull prepare
+dvc pull
 ```
 
 On the first `dvc pull` a browser opens. Sign in with **the Google account the
@@ -115,10 +115,9 @@ these credentials** -- this repository is public.
 `dvc pull` to get data, `dvc push` after a pipeline run, and commit the
 resulting `.dvc` / `dvc.lock` files.
 
-Use `dvc pull prepare` rather than a bare `dvc pull` until the `train` stage has
-been run at least once. Bare `dvc pull` tries to check out
-`models/resnet18_best.pt`, which `dvc.yaml` declares but which does not exist
-until someone runs `dvc repro train` and pushes.
+`dvc pull` alone is fine now that `models/resnet18_best.pt` has been pushed to
+the remote. If you hit a missing-object error on a fresh clone, someone forgot
+to `dvc push` after the last pipeline run, not a config problem.
 
 ### Gotchas
 

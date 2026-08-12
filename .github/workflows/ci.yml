@@ -89,16 +89,20 @@ jobs:
 
       - name: Smoke test -- /health endpoint
         run: |
-          # Liveness check only, no model files mounted, health check runs on fallback defaults.
+          # No checkpoint is mounted in this job, so /health should report the
+          # honest degraded state and a 503, not a fallback "ok".
           docker run -d --name mai202-ci -p 8000:8000 mai202-dog-ood:ci
           sleep 15
-          curl --retry 5 --retry-delay 3 --retry-connrefused \
-            http://localhost:8000/health | python3 -c "
-          import sys, json
-          data = json.load(sys.stdin)
-          assert data['status'] == 'ok', f'Expected ok got {data}'
-          assert data['model'] == 'resnet18', f'Expected resnet18 got {data}'
-          assert data['classes'] == 120, f'Expected 120 got {data}'
-          print('Smoke test passed:', data)
+          code=$(curl --retry 5 --retry-delay 3 --retry-connrefused \
+            -s -o response.json -w "%{http_code}" \
+            http://localhost:8000/health)
+          python3 -c "
+          import json
+          with open('response.json') as f:
+              data = json.load(f)
+          assert '$code' == '503', f'Expected 503 got $code, body={data}'
+          assert data['status'] == 'degraded', f'Expected degraded got {data}'
+          assert data['model'] is None, f'Expected model=None got {data}'
+          print('Smoke test passed (no checkpoint mounted, service correctly reports degraded):', data)
           "
           docker stop mai202-ci

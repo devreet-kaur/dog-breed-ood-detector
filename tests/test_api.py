@@ -200,3 +200,11 @@ def test_startup_does_not_crash_with_missing_model_files(monkeypatch, tmp_path):
     assert app_module._state["binary_model"] is None
     assert app_module._state["temperature"] == 1.0
     assert app_module._state["entropy_threshold"] is None
+
+def test_health_degraded_when_breed_model_missing(client: TestClient) -> None:
+    _state["breed_model"] = None
+    response = client.get("/health")
+    data = response.json()
+    assert response.status_code == 503
+    assert data["status"] == "degraded"
+    assert data["model"] is None
