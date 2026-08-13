@@ -1,0 +1,63 @@
+# dog-breed-ood-detector
+# Python 3.11 | Apple Silicon MPS + CUDA compatible
+#
+# Install PyTorch first:
+#   macOS:   pip install torch==2.13.0 torchvision==0.28.0 --index-url https://download.pytorch.org/whl/cpu
+#   CUDA:    pip install torch==2.13.0 torchvision==0.28.0 --index-url https://download.pytorch.org/whl/cu121
+#
+# Then: pip install -r requirements.txt
+
+# Deep Learning
+torch==2.13.0
+torchvision==0.28.0
+
+# Data Loading
+datasets==5.0.0
+huggingface-hub==1.25.1
+
+# Augmentation
+albumentations==2.0.8
+
+# Experiment Tracking
+# macOS: mlflow ui --port 5001 --backend-store-uri sqlite:///mlflow.db
+mlflow==3.14.0
+
+# Metrics
+scikit-learn==1.9.0
+torchmetrics==1.9.0
+
+# Visualization
+matplotlib==3.11.1
+seaborn==0.13.2
+grad-cam==1.5.5
+
+# Image Processing
+numpy==2.4.6
+Pillow==12.3.0
+opencv-python-headless==5.0.0.93
+
+# API Serving
+# macOS: uvicorn src.app:app --host 0.0.0.0 --port 5001 --reload
+# Windows: uvicorn src.app:app --host 0.0.0.0 --port 8000 --reload
+fastapi==0.140.7
+uvicorn[standard]==0.51.0
+python-multipart==0.0.32
+pydantic==2.13.4
+
+# Monitoring
+evidently==0.7.21
+
+# Pipeline
+dvc[gdrive]==3.67.1
+# No remote-storage plugin needed: the Google Drive remote is a plain
+# filesystem path via Drive for Desktop, which core dvc handles natively.
+# (Was dvc-webdav==3.0.1 for the old HuggingFace remote.)
+PyYAML==6.0.3
+
+# Testing
+pytest==9.1.1
+httpx==0.28.1
+ruff==0.16.0
+
+# Utilities
+tqdm==4.70.0

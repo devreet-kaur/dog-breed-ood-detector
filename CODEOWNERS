@@ -1,0 +1,28 @@
+# CODEOWNERS
+# These people are automatically added as reviewers when files in their area change.
+# GitHub requires at least 1 CODEOWNER approval before merge if branch protection is set.
+
+# Global fallback -- Devreet reviews everything by default
+* @devreet-kaur
+
+# Data pipeline -- Ryan reviews any changes to data scripts and DVC config
+src/prepare.py @ryansoria24
+src/download_ood.py @ryansoria24
+dvc.yaml @ryansoria24
+
+# Model training -- Arushi reviews training and evaluation scripts
+src/train.py @arushi-78
+src/evaluate.py @arushi-78
+params.yaml @arushi-78
+
+# OOD detection -- Soodeh reviews OOD scripts
+src/ood_entropy.py @svanaki
+src/ood_binary.py @svanaki
+src/ood_compare.py @svanaki
+
+# DevOps -- Devreet reviews infra files
+Dockerfile @devreet-kaur
+docker-compose.yml @devreet-kaur
+.github/ @devreet-kaur
+src/app.py @devreet-kaur
+src/monitor.py @devreet-kaur
